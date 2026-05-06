@@ -28,8 +28,26 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Ignore all env files except .env.sample
+# environment and secrets
 .env
+.env.*
+!.env.sample
+!.env.example
+!.env.template
+.envrc
+.direnv/
+
+# sensitive keys and cert material
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.crt
+*.cer
+*.der
+*.csr
+*.ovpn
 
 
 # vercel
