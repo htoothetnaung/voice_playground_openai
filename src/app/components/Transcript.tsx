@@ -2,10 +2,12 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { TranscriptItem } from "@/app/types";
 import Image from "next/image";
+import { ClipboardCopyIcon, DownloadIcon } from "@radix-ui/react-icons";
+
+import { BreadcrumbType, TranscriptItem } from "@/app/types";
 import { useTranscript } from "@/app/contexts/TranscriptContext";
-import { DownloadIcon, ClipboardCopyIcon } from "@radix-ui/react-icons";
+
 import { GuardrailChip } from "./GuardrailChip";
 
 export interface TranscriptProps {
@@ -14,6 +16,73 @@ export interface TranscriptProps {
   onSendMessage: () => void;
   canSend: boolean;
   downloadRecording: () => void;
+  canDownloadRecording?: boolean;
+}
+
+function getBreadcrumbPresentation(
+  title: string,
+  breadcrumbType?: BreadcrumbType
+) {
+  const normalizedType =
+    breadcrumbType ||
+    (title.startsWith("[supervisorAgent]") ? "supervisor" : "default");
+
+  switch (normalizedType) {
+    case "handoff":
+      return {
+        badge: "Handoff",
+        wrapper: "border-violet-200 bg-violet-50/80 text-violet-900",
+        badgeClass: "bg-violet-100 text-violet-700",
+      };
+    case "tool_call":
+      return {
+        badge: "Tool Start",
+        wrapper: "border-amber-200 bg-amber-50/80 text-amber-950",
+        badgeClass: "bg-amber-100 text-amber-700",
+      };
+    case "tool_result":
+      return {
+        badge: "Tool Result",
+        wrapper: "border-emerald-200 bg-emerald-50/80 text-emerald-950",
+        badgeClass: "bg-emerald-100 text-emerald-700",
+      };
+    case "guardrail":
+      return {
+        badge: "Guardrail",
+        wrapper: "border-rose-200 bg-rose-50/80 text-rose-950",
+        badgeClass: "bg-rose-100 text-rose-700",
+      };
+    case "audio":
+      return {
+        badge: "Audio",
+        wrapper: "border-sky-200 bg-sky-50/80 text-sky-950",
+        badgeClass: "bg-sky-100 text-sky-700",
+      };
+    case "agent":
+      return {
+        badge: "Agent",
+        wrapper: "border-slate-200 bg-slate-100/90 text-slate-900",
+        badgeClass: "bg-white text-slate-600",
+      };
+    case "supervisor":
+      return {
+        badge: "Supervisor",
+        wrapper: "border-fuchsia-200 bg-fuchsia-50/80 text-fuchsia-950",
+        badgeClass: "bg-fuchsia-100 text-fuchsia-700",
+      };
+    case "session":
+      return {
+        badge: "Session",
+        wrapper: "border-slate-200 bg-slate-50 text-slate-900",
+        badgeClass: "bg-white text-slate-600",
+      };
+    default:
+      return {
+        badge: "Trace",
+        wrapper: "border-slate-200 bg-white text-slate-900",
+        badgeClass: "bg-slate-100 text-slate-600",
+      };
+  }
 }
 
 function Transcript({
@@ -22,6 +91,7 @@ function Transcript({
   onSendMessage,
   canSend,
   downloadRecording,
+  canDownloadRecording = true,
 }: TranscriptProps) {
   const { transcriptItems, toggleTranscriptItemExpand } = useTranscript();
   const transcriptRef = useRef<HTMLDivElement | null>(null);
@@ -50,9 +120,8 @@ function Transcript({
     }
 
     setPrevLogs(transcriptItems);
-  }, [transcriptItems]);
+  }, [transcriptItems, prevLogs]);
 
-  // Autofocus on text box input on load
   useEffect(() => {
     if (canSend && inputRef.current) {
       inputRef.current.focus();
@@ -71,32 +140,37 @@ function Transcript({
   };
 
   return (
-    <div className="flex flex-col flex-1 bg-white min-h-0 rounded-xl">
-      <div className="flex flex-col flex-1 min-h-0">
-        <div className="flex items-center justify-between px-6 py-3 sticky top-0 z-10 text-base border-b bg-white rounded-t-xl">
-          <span className="font-semibold">Transcript</span>
+    <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-2xl border-b border-slate-200 bg-white px-6 py-4 text-base">
+          <div className="flex flex-col">
+            <span className="font-semibold text-slate-900">Transcript</span>
+            <span className="text-xs text-slate-500">
+              Live call flow, handoffs, guardrails, and tool activity
+            </span>
+          </div>
           <div className="flex gap-x-2">
             <button
               onClick={handleCopyTranscript}
-              className="w-24 text-sm px-3 py-1 rounded-md bg-gray-200 hover:bg-gray-300 flex items-center justify-center gap-x-1"
+              className="flex w-24 items-center justify-center gap-x-1 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200"
             >
               <ClipboardCopyIcon />
               {justCopied ? "Copied!" : "Copy"}
             </button>
             <button
               onClick={downloadRecording}
-              className="w-40 text-sm px-3 py-1 rounded-md bg-gray-200 hover:bg-gray-300 flex items-center justify-center gap-x-1"
+              disabled={!canDownloadRecording}
+              className="flex w-40 items-center justify-center gap-x-1 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <DownloadIcon />
-              <span>Download Audio</span>
+              <span>{canDownloadRecording ? "Download Audio" : "Download N/A"}</span>
             </button>
           </div>
         </div>
 
-        {/* Transcript Content */}
         <div
           ref={transcriptRef}
-          className="overflow-auto p-4 flex flex-col gap-y-4 h-full"
+          className="flex h-full flex-col gap-y-4 overflow-auto bg-[radial-gradient(circle_at_top,_rgba(226,232,240,0.18),_transparent_32%)] px-5 py-4"
         >
           {[...transcriptItems]
             .sort((a, b) => a.createdAtMs - b.createdAtMs)
@@ -111,106 +185,128 @@ function Transcript({
                 title = "",
                 isHidden,
                 guardrailResult,
+                breadcrumbType,
               } = item;
 
-            if (isHidden) {
-              return null;
-            }
+              if (isHidden) {
+                return null;
+              }
 
-            if (type === "MESSAGE") {
-              const isUser = role === "user";
-              const containerClasses = `flex justify-end flex-col ${
-                isUser ? "items-end" : "items-start"
-              }`;
-              const bubbleBase = `max-w-lg p-3 ${
-                isUser ? "bg-gray-900 text-gray-100" : "bg-gray-100 text-black"
-              }`;
-              const isBracketedMessage =
-                title.startsWith("[") && title.endsWith("]");
-              const messageStyle = isBracketedMessage
-                ? 'italic text-gray-400'
-                : '';
-              const displayTitle = isBracketedMessage
-                ? title.slice(1, -1)
-                : title;
+              if (type === "MESSAGE") {
+                const isUser = role === "user";
+                const containerClasses = `flex flex-col justify-end ${
+                  isUser ? "items-end" : "items-start"
+                }`;
+                const bubbleBase = `max-w-[42rem] border p-4 shadow-sm ${
+                  isUser
+                    ? "border-slate-900 bg-slate-900 text-slate-50"
+                    : "border-slate-200 bg-slate-50 text-slate-900"
+                }`;
+                const isBracketedMessage =
+                  title.startsWith("[") && title.endsWith("]");
+                const messageStyle = isBracketedMessage
+                  ? "italic text-slate-400"
+                  : "";
+                const displayTitle = isBracketedMessage
+                  ? title.slice(1, -1)
+                  : title;
 
-              return (
-                <div key={itemId} className={containerClasses}>
-                  <div className="max-w-lg">
-                    <div
-                      className={`${bubbleBase} rounded-t-xl ${
-                        guardrailResult ? "" : "rounded-b-xl"
-                      }`}
-                    >
+                return (
+                  <div key={itemId} className={containerClasses}>
+                    <div className="max-w-[42rem]">
                       <div
-                        className={`text-xs ${
-                          isUser ? "text-gray-400" : "text-gray-500"
-                        } font-mono`}
-                      >
-                        {timestamp}
-                      </div>
-                      <div className={`whitespace-pre-wrap ${messageStyle}`}>
-                        <ReactMarkdown>{displayTitle}</ReactMarkdown>
-                      </div>
-                    </div>
-                    {guardrailResult && (
-                      <div className="bg-gray-200 px-3 py-2 rounded-b-xl">
-                        <GuardrailChip guardrailResult={guardrailResult} />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            } else if (type === "BREADCRUMB") {
-              return (
-                <div
-                  key={itemId}
-                  className="flex flex-col justify-start items-start text-gray-500 text-sm"
-                >
-                  <span className="text-xs font-mono">{timestamp}</span>
-                  <div
-                    className={`whitespace-pre-wrap flex items-center font-mono text-sm text-gray-800 ${
-                      data ? "cursor-pointer" : ""
-                    }`}
-                    onClick={() => data && toggleTranscriptItemExpand(itemId)}
-                  >
-                    {data && (
-                      <span
-                        className={`text-gray-400 mr-1 transform transition-transform duration-200 select-none font-mono ${
-                          expanded ? "rotate-90" : "rotate-0"
+                        className={`${bubbleBase} rounded-t-2xl ${
+                          guardrailResult ? "" : "rounded-b-2xl"
                         }`}
                       >
-                        ▶
-                      </span>
-                    )}
-                    {title}
-                  </div>
-                  {expanded && data && (
-                    <div className="text-gray-800 text-left">
-                      <pre className="border-l-2 ml-1 border-gray-200 whitespace-pre-wrap break-words font-mono text-xs mb-2 mt-2 pl-2">
-                        {JSON.stringify(data, null, 2)}
-                      </pre>
+                        <div
+                          className={`font-mono text-xs ${
+                            isUser ? "text-slate-400" : "text-slate-500"
+                          }`}
+                        >
+                          {timestamp}
+                        </div>
+                        <div className={`whitespace-pre-wrap ${messageStyle}`}>
+                          <ReactMarkdown>{displayTitle}</ReactMarkdown>
+                        </div>
+                      </div>
+                      {guardrailResult && (
+                        <div className="rounded-b-2xl border border-t-0 border-slate-200 bg-slate-100 px-4 py-3">
+                          <GuardrailChip guardrailResult={guardrailResult} />
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            } else {
-              // Fallback if type is neither MESSAGE nor BREADCRUMB
+                  </div>
+                );
+              }
+
+              if (type === "BREADCRUMB") {
+                const presentation = getBreadcrumbPresentation(
+                  title,
+                  breadcrumbType
+                );
+                return (
+                  <div
+                    key={itemId}
+                    className="flex flex-col items-start justify-start text-sm text-slate-500"
+                  >
+                    <span className="mb-1 font-mono text-xs">{timestamp}</span>
+                    <div
+                      className={`flex w-full items-start gap-3 rounded-2xl border px-4 py-3 font-mono text-sm ${presentation.wrapper} ${
+                        data ? "cursor-pointer" : ""
+                      }`}
+                      onClick={() => data && toggleTranscriptItemExpand(itemId)}
+                    >
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <span
+                          className={`mt-0.5 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${presentation.badgeClass}`}
+                        >
+                          {presentation.badge}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="break-words">{title}</div>
+                          {data && (
+                            <div className="mt-1 text-[11px] text-slate-500">
+                              Click to {expanded ? "collapse" : "expand"} details
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {data && (
+                        <span
+                          className={`select-none font-mono text-slate-400 transition-transform duration-200 ${
+                            expanded ? "rotate-90" : "rotate-0"
+                          }`}
+                        >
+                          &gt;
+                        </span>
+                      )}
+                    </div>
+                    {expanded && data && (
+                      <div className="w-full text-left text-slate-800">
+                        <pre className="mb-2 mt-2 ml-3 whitespace-pre-wrap break-words border-l-2 border-slate-200 pl-3 font-mono text-xs">
+                          {JSON.stringify(data, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={itemId}
-                  className="flex justify-center text-gray-500 text-sm italic font-mono"
+                  className="flex justify-center font-mono text-sm italic text-slate-500"
                 >
                   Unknown item type: {type}{" "}
                   <span className="ml-2 text-xs">{timestamp}</span>
                 </div>
               );
-            }
-          })}
+            })}
         </div>
       </div>
 
-      <div className="p-4 flex items-center gap-x-2 flex-shrink-0 border-t border-gray-200">
+      <div className="flex flex-shrink-0 items-center gap-x-2 rounded-b-2xl border-t border-slate-200 bg-white p-4">
         <input
           ref={inputRef}
           type="text"
@@ -221,15 +317,15 @@ function Transcript({
               onSendMessage();
             }
           }}
-          className="flex-1 px-4 py-2 focus:outline-none"
+          className="flex-1 rounded-xl border border-slate-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-300"
           placeholder="Type a message..."
         />
         <button
           onClick={onSendMessage}
           disabled={!canSend || !userText.trim()}
-          className="bg-gray-900 text-white rounded-full px-2 py-2 disabled:opacity-50"
+          className="rounded-full bg-slate-900 px-3 py-3 text-white shadow-sm disabled:opacity-50"
         >
-          <Image src="arrow.svg" alt="Send" width={24} height={24} />
+          <Image src="/arrow.svg" alt="Send" width={24} height={24} />
         </button>
       </div>
     </div>

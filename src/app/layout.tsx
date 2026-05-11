@@ -3,8 +3,8 @@ import "./globals.css";
 import "./lib/envSetup";
 
 export const metadata: Metadata = {
-  title: "Realtime API Agents",
-  description: "A demo app from OpenAI.",
+  title: "Atenxion Call Center Lab",
+  description: "A realtime multi-agent telecom support demo with tool calls and handoffs.",
 };
 
 export default function RootLayout({

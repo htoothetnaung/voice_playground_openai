@@ -8,7 +8,7 @@ import React, {
   PropsWithChildren,
 } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { TranscriptItem } from "@/app/types";
+import { BreadcrumbType, TranscriptItem } from "@/app/types";
 
 type TranscriptContextValue = {
   transcriptItems: TranscriptItem[];
@@ -79,18 +79,29 @@ export const TranscriptProvider: FC<PropsWithChildren> = ({ children }) => {
   };
 
   const addTranscriptBreadcrumb: TranscriptContextValue["addTranscriptBreadcrumb"] = (title, data) => {
+    const breadcrumbType =
+      (data && typeof data === "object" && "_breadcrumbType" in data
+        ? (data._breadcrumbType as BreadcrumbType)
+        : "default");
+    const sanitizedData =
+      data && typeof data === "object" && "_breadcrumbType" in data
+        ? Object.fromEntries(
+            Object.entries(data).filter(([key]) => key !== "_breadcrumbType")
+          )
+        : data;
     setTranscriptItems((prev) => [
       ...prev,
       {
         itemId: `breadcrumb-${uuidv4()}`,
         type: "BREADCRUMB",
         title,
-        data,
+        data: sanitizedData,
         expanded: false,
         timestamp: newTimestampPretty(),
         createdAtMs: Date.now(),
         status: "DONE",
         isHidden: false,
+        breadcrumbType,
       },
     ]);
   };

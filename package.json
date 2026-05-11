@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:backend": "uv run --project backend uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload",
+    "dev:backend:venv": ".\\backend\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:backend": "uv run --project backend pytest backend/tests"
   },
   "dependencies": {
     "@openai/agents": "^0.0.5",

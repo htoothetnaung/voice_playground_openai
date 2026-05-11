@@ -1,15 +1,11 @@
 import React, { useState } from "react";
 import {
   CheckCircledIcon,
-  CrossCircledIcon,
   ClockIcon,
+  CrossCircledIcon,
 } from "@radix-ui/react-icons";
-import { GuardrailResultType } from "../types";
 
-export interface ModerationChipProps {
-  moderationCategory: string;
-  moderationRationale: string;
-}
+import { GuardrailResultType } from "../types";
 
 function formatCategory(category: string): string {
   return category
@@ -25,7 +21,6 @@ export function GuardrailChip({
 }) {
   const [expanded, setExpanded] = useState(false);
 
-  // Consolidate state into a single variable: "PENDING", "PASS", or "FAIL"
   const state =
     guardrailResult.status === "IN_PROGRESS"
       ? "PENDING"
@@ -33,71 +28,78 @@ export function GuardrailChip({
       ? "PASS"
       : "FAIL";
 
-  // Variables for icon, label, and styling classes based on state
   let IconComponent;
   let label: string;
-  let textColorClass: string;
+  let wrapperClass: string;
+  let pillClass: string;
+
   switch (state) {
     case "PENDING":
       IconComponent = ClockIcon;
-      label = "Pending";
-      textColorClass = "text-gray-600";
+      label = "Pending review";
+      wrapperClass = "border-slate-200 bg-white text-slate-600";
+      pillClass = "bg-slate-100 text-slate-600";
       break;
     case "PASS":
       IconComponent = CheckCircledIcon;
-      label = "Pass";
-      textColorClass = "text-green-600";
+      label = "Passed";
+      wrapperClass = "border-emerald-200 bg-emerald-50 text-emerald-800";
+      pillClass = "bg-emerald-100 text-emerald-700";
       break;
     case "FAIL":
       IconComponent = CrossCircledIcon;
-      label = "Fail";
-      textColorClass = "text-red-500";
+      label = "Flagged";
+      wrapperClass = "border-rose-200 bg-rose-50 text-rose-800";
+      pillClass = "bg-rose-100 text-rose-700";
       break;
     default:
       IconComponent = ClockIcon;
-      label = "Pending";
-      textColorClass = "text-gray-600";
+      label = "Pending review";
+      wrapperClass = "border-slate-200 bg-white text-slate-600";
+      pillClass = "bg-slate-100 text-slate-600";
   }
 
   return (
     <div className="text-xs">
       <div
         onClick={() => {
-          // Only allow toggling the expanded state for PASS/FAIL cases.
           if (state !== "PENDING") {
             setExpanded(!expanded);
           }
         }}
-        // Only add pointer cursor if clickable (PASS or FAIL state)
-        className={`inline-flex items-center gap-1 rounded ${
+        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 ${wrapperClass} ${
           state !== "PENDING" ? "cursor-pointer" : ""
         }`}
       >
-        Guardrail:
-        <div className={`flex items-center gap-1 ${textColorClass}`}>
+        <span className="text-[10px] font-semibold uppercase tracking-wide">
+          Guardrail
+        </span>
+        <span className={`flex items-center gap-1 rounded-full px-2 py-1 ${pillClass}`}>
           <IconComponent /> {label}
-        </div>
+        </span>
       </div>
-      {/* Container for expandable content */}
-      {state !== "PENDING" && guardrailResult.category && guardrailResult.rationale && (
-        <div
-          className={`overflow-hidden transition-all duration-300 ${
-            expanded ? "max-h-[1000px] opacity-100" : "max-h-0 opacity-0"
-          }`}
-        >
-          <div className="pt-2 text-xs">
-            <strong>
-              Moderation Category: {formatCategory(guardrailResult.category)}
-            </strong>
-            <div>{guardrailResult.rationale}</div>
-            {guardrailResult.testText && (
-              <blockquote className="mt-1 border-l-2 border-gray-300 pl-2 text-gray-400">
-                {guardrailResult.testText}
-              </blockquote>
-            )}
+
+      {state !== "PENDING" &&
+        guardrailResult.category &&
+        guardrailResult.rationale && (
+          <div
+            className={`overflow-hidden transition-all duration-300 ${
+              expanded ? "max-h-[1000px] opacity-100" : "max-h-0 opacity-0"
+            }`}
+          >
+            <div className="pt-3 text-xs text-slate-700">
+              <strong>
+                Moderation Category: {formatCategory(guardrailResult.category)}
+              </strong>
+              <div className="mt-1">{guardrailResult.rationale}</div>
+              {guardrailResult.testText && (
+                <blockquote className="mt-2 border-l-2 border-slate-300 pl-2 text-slate-500">
+                  {guardrailResult.testText}
+                </blockquote>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
     </div>
   );
-} 
+}

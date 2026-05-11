@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { hasBackendProxyTarget, proxyToBackend } from '../_lib/backendProxy';
 
 // Proxy endpoint for the OpenAI Responses API
 export async function POST(req: NextRequest) {
   const body = await req.json();
+
+  if (hasBackendProxyTarget()) {
+    return await proxyToBackend('/api/responses', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 

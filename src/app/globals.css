@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  --background: #fafafa;
-  --foreground: #171717;
+  --background: #f1f5f9;
+  --foreground: #0f172a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -19,4 +19,5 @@ body {
   background: var(--background);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  min-height: 100vh;
 }

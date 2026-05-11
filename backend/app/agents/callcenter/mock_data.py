@@ -1,0 +1,125 @@
+"""Stores in-memory customer, billing, service, plan, and policy records used by tool functions for the demo scenario."""
+ATENXION_CUSTOMER_PROFILE = {
+    "account_id": "ATX-204871",
+    "full_name": "Htoo Thet",
+    "phone_number": "09661200650",
+    "date_of_birth": "2004-05-29",
+    "pin_last4": "1234",
+    "sentiment": "frustrated_but_cooperative",
+    "tenure_years": 4,
+    "autopay": True,
+    "preferred_contact": "sms",
+    "service_address": {
+        "street": "1428 Aurora Avenue N",
+        "city": "Seattle",
+        "state": "WA",
+        "postal_code": "98109",
+    },
+    "billing_address": {
+        "street": "1428 Aurora Avenue N",
+        "city": "Seattle",
+        "state": "WA",
+        "postal_code": "98109",
+    },
+    "current_plan": {
+        "code": "ATX-UNLIMITED-PLUS",
+        "name": "Unlimited Plus",
+        "monthly_price_usd": 89,
+    },
+}
+
+ATENXION_ACTIVE_SERVICES = {
+    "services": [
+        {
+            "service_id": "SRV-MOB-01",
+            "type": "5g_mobile",
+            "status": "active",
+            "line_id": "LINE-01",
+            "plan_code": "ATX-UNLIMITED-PLUS",
+        },
+        {
+            "service_id": "SRV-TAB-01",
+            "type": "tablet_data",
+            "status": "active",
+            "line_id": "LINE-02",
+            "plan_code": "ATX-TAB-10GB",
+        },
+        {
+            "service_id": "SRV-HOME-01",
+            "type": "home_internet",
+            "status": "active",
+            "speed_tier": "1 Gig",
+            "modem_id": "ATX-GW-7781",
+        },
+    ]
+}
+
+ATENXION_LATEST_BILL = {
+    "bill_id": "BILL-2026-04",
+    "billing_period": "2026-04-01 to 2026-04-30",
+    "due_date": "2026-05-15",
+    "status": "due",
+    "total_usd": 146.32,
+    "prior_month_usd": 97.84,
+    "summary": {
+        "base_plan_usd": 89,
+        "international_calls_usd": 22.14,
+        "roaming_day_passes_usd": 18,
+        "device_protection_usd": 12.99,
+        "taxes_and_fees_usd": 4.19,
+    },
+}
+
+ATENXION_PLAN_CATALOG = [
+    {
+        "code": "ATX-START",
+        "name": "Atenxion Start",
+        "monthly_price_usd": 55,
+        "highlights": ["Unlimited talk and text", "30GB premium data", "No hotspot"],
+    },
+    {
+        "code": "ATX-UNLIMITED-PLUS",
+        "name": "Unlimited Plus",
+        "monthly_price_usd": 89,
+        "highlights": ["Unlimited premium data", "20GB hotspot", "International roaming perks"],
+    },
+    {
+        "code": "ATX-FAMILY-FLEX",
+        "name": "Family Flex",
+        "monthly_price_usd": 135,
+        "highlights": ["Up to 4 lines", "Shared hotspot pool", "Streaming bundle credit"],
+    },
+]
+
+ATENXION_POLICY_DOCS = [
+    {
+        "id": "POL-001",
+        "topic": "goodwill credit",
+        "name": "Goodwill Credit Policy",
+        "content": "Frontline billing agents may issue up to a $20 one-time credit per rolling 12-month period when charges are valid but goodwill is appropriate. Larger credits require supervisor approval.",
+    },
+    {
+        "id": "POL-002",
+        "topic": "payment arrangement",
+        "name": "Payment Flex Policy",
+        "content": "Eligible postpaid accounts in good standing may defer up to 50% of a past-due or current balance for 14 days. Accounts with repeated broken promises require supervisor review.",
+    },
+    {
+        "id": "POL-003",
+        "topic": "outage",
+        "name": "Residential Outage Handling",
+        "content": "If there is a verified area outage, agents should avoid repeated troubleshooting, set expectations, and offer a case note plus optional outage-follow-up text enrollment.",
+    },
+    {
+        "id": "POL-004",
+        "topic": "retention",
+        "name": "Retention Save Guidelines",
+        "content": "Retention agents may offer a three-month loyalty discount, a device protection waiver, or a downgrade path when a customer cites price pressure or cancellation intent.",
+    },
+    {
+        "id": "POL-005",
+        "topic": "technician",
+        "name": "Technician Dispatch Rules",
+        "content": "Technician visits may be scheduled in 2-hour windows from 8 AM to 6 PM local time when remote diagnostics show persistent impairment or customer equipment replacement is likely.",
+    },
+]

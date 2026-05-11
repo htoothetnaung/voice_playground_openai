@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useRef, useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+
 import { useEvent } from "@/app/contexts/EventContext";
 import { LoggedEvent } from "@/app/types";
 
@@ -11,12 +12,11 @@ export interface EventsProps {
 function Events({ isExpanded }: EventsProps) {
   const [prevEventLogs, setPrevEventLogs] = useState<LoggedEvent[]>([]);
   const eventLogsContainerRef = useRef<HTMLDivElement | null>(null);
-
   const { loggedEvents, toggleExpand } = useEvent();
 
   const getDirectionArrow = (direction: string) => {
-    if (direction === "client") return { symbol: "▲", color: "#7f5af0" };
-    if (direction === "server") return { symbol: "▼", color: "#2cb67d" };
+    if (direction === "client") return { symbol: "▲", color: "#7c3aed" };
+    if (direction === "server") return { symbol: "▼", color: "#059669" };
     return { symbol: "•", color: "#555" };
   };
 
@@ -29,20 +29,25 @@ function Events({ isExpanded }: EventsProps) {
     }
 
     setPrevEventLogs(loggedEvents);
-  }, [loggedEvents, isExpanded]);
+  }, [loggedEvents, isExpanded, prevEventLogs]);
 
   return (
     <div
       className={
-        (isExpanded ? "w-1/2 overflow-auto" : "w-0 overflow-hidden opacity-0") +
-        " transition-all rounded-xl duration-200 ease-in-out flex-col bg-white"
+        (isExpanded ? "w-[38%] overflow-auto opacity-100" : "w-0 overflow-hidden opacity-0") +
+        " flex-col rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-200 ease-in-out"
       }
       ref={eventLogsContainerRef}
     >
       {isExpanded && (
         <div>
-          <div className="flex items-center justify-between px-6 py-3.5 sticky top-0 z-10 text-base border-b bg-white rounded-t-xl">
-            <span className="font-semibold">Logs</span>
+          <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-2xl border-b border-slate-200 bg-white px-6 py-4 text-base">
+            <div className="flex flex-col">
+              <span className="font-semibold text-slate-900">Logs</span>
+              <span className="text-xs text-slate-500">
+                Transport and session event trace
+              </span>
+            </div>
           </div>
           <div>
             {loggedEvents.map((log, idx) => {
@@ -54,36 +59,33 @@ function Events({ isExpanded }: EventsProps) {
               return (
                 <div
                   key={`${log.id}-${idx}`}
-                  className="border-t border-gray-200 py-2 px-6 font-mono"
+                  className="border-t border-slate-200 px-6 py-3 font-mono"
                 >
                   <div
                     onClick={() => toggleExpand(log.id)}
-                    className="flex items-center justify-between cursor-pointer"
+                    className="flex cursor-pointer items-center justify-between gap-3"
                   >
-                    <div className="flex items-center flex-1">
-                      <span
-                        style={{ color: arrowInfo.color }}
-                        className="ml-1 mr-2"
-                      >
-                      {arrowInfo.symbol}
+                    <div className="flex flex-1 items-center gap-2">
+                      <span style={{ color: arrowInfo.color }} className="text-xs">
+                        {arrowInfo.symbol}
                       </span>
                       <span
                         className={
                           "flex-1 text-sm " +
-                          (isError ? "text-red-600" : "text-gray-800")
+                          (isError ? "text-rose-600" : "text-slate-800")
                         }
                       >
                         {log.eventName}
                       </span>
                     </div>
-                    <div className="text-gray-500 ml-1 text-xs whitespace-nowrap">
+                    <div className="ml-1 whitespace-nowrap text-xs text-slate-500">
                       {log.timestamp}
                     </div>
                   </div>
 
                   {log.expanded && log.eventData && (
-                    <div className="text-gray-800 text-left">
-                      <pre className="border-l-2 ml-1 border-gray-200 whitespace-pre-wrap break-words font-mono text-xs mb-2 mt-2 pl-2">
+                    <div className="mt-2 text-left text-slate-800">
+                      <pre className="mb-2 ml-1 whitespace-pre-wrap break-words border-l-2 border-slate-200 pl-2 font-mono text-xs">
                         {JSON.stringify(log.eventData, null, 2)}
                       </pre>
                     </div>

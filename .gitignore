@@ -7,26 +7,50 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+**/.venv/
+**/.uv-cache/
+**/.uv-ache/
 
 # testing
 /coverage
+**/coverage/
 
 # next.js
 /.next/
+**/.next/
 /out/
+**/out/
 
 # production
 /build
+**/build/
+**/dist/
 
 # misc
 .DS_Store
 *.pem
+**/*.err
+**/*.log
 
 # debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+**/__pycache__/
+**/*.py[cod]
+
+
+# large unnecessary folders
+/.vscode
+salesforce_research/
+/docs
+filler_sounds/
+public/filler_sounds/
+src/**/.cache/
+src/**/tmp/
+src/**/temp/
+src/**/storybook-static/
 
 # environment and secrets
 .env
@@ -57,4 +81,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 todo.md
+backend/.data/
+*.db
 

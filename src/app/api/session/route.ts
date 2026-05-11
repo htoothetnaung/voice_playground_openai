@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
+import { hasBackendProxyTarget, proxyToBackend } from "../_lib/backendProxy";
 
 export async function GET() {
   try {
+    if (hasBackendProxyTarget()) {
+      return await proxyToBackend("/api/session", {
+        method: "GET",
+      });
+    }
+
     const response = await fetch(
       "https://api.openai.com/v1/realtime/sessions",
       {

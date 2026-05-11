@@ -1,4 +1,5 @@
 import React from "react";
+
 import { SessionStatus } from "@/app/types";
 
 interface BottomToolbarProps {
@@ -36,8 +37,7 @@ function BottomToolbar({
   const isConnecting = sessionStatus === "CONNECTING";
 
   const handleCodecChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newCodec = e.target.value;
-    onCodecChange(newCodec);
+    onCodecChange(e.target.value);
   };
 
   function getConnectionButtonLabel() {
@@ -47,108 +47,94 @@ function BottomToolbar({
   }
 
   function getConnectionButtonClasses() {
-    const baseClasses = "text-white text-base p-2 w-36 rounded-md h-full";
+    const baseClasses =
+      "h-full w-36 rounded-xl px-4 py-3 text-base font-medium text-white shadow-sm";
     const cursorClass = isConnecting ? "cursor-not-allowed" : "cursor-pointer";
 
     if (isConnected) {
-      // Connected -> label "Disconnect" -> red
-      return `bg-red-600 hover:bg-red-700 ${cursorClass} ${baseClasses}`;
+      return `bg-rose-600 hover:bg-rose-700 ${cursorClass} ${baseClasses}`;
     }
-    // Disconnected or connecting -> label is either "Connect" or "Connecting" -> black
-    return `bg-black hover:bg-gray-900 ${cursorClass} ${baseClasses}`;
+
+    return `bg-slate-900 hover:bg-slate-800 ${cursorClass} ${baseClasses}`;
   }
 
   return (
-    <div className="p-4 flex flex-row items-center justify-center gap-x-8">
-      <button
-        onClick={onToggleConnection}
-        className={getConnectionButtonClasses()}
-        disabled={isConnecting}
-      >
-        {getConnectionButtonLabel()}
-      </button>
-
-      <div className="flex flex-row items-center gap-2">
-        <input
-          id="push-to-talk"
-          type="checkbox"
-          checked={isPTTActive}
-          onChange={(e) => setIsPTTActive(e.target.checked)}
-          disabled={!isConnected}
-          className="w-4 h-4"
-        />
-        <label
-          htmlFor="push-to-talk"
-          className="flex items-center cursor-pointer"
-        >
-          Push to talk
-        </label>
+    <div className="border-t border-slate-200 bg-white px-4 py-4">
+      <div className="flex flex-wrap items-center justify-center gap-6 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
         <button
-          onMouseDown={handleTalkButtonDown}
-          onMouseUp={handleTalkButtonUp}
-          onTouchStart={handleTalkButtonDown}
-          onTouchEnd={handleTalkButtonUp}
-          disabled={!isPTTActive}
-          className={
-            (isPTTUserSpeaking ? "bg-gray-300" : "bg-gray-200") +
-            " py-1 px-4 cursor-pointer rounded-md" +
-            (!isPTTActive ? " bg-gray-100 text-gray-400" : "")
-          }
+          onClick={onToggleConnection}
+          className={getConnectionButtonClasses()}
+          disabled={isConnecting}
         >
-          Talk
+          {getConnectionButtonLabel()}
         </button>
-      </div>
 
-      <div className="flex flex-row items-center gap-1">
-        <input
-          id="audio-playback"
-          type="checkbox"
-          checked={isAudioPlaybackEnabled}
-          onChange={(e) => setIsAudioPlaybackEnabled(e.target.checked)}
-          disabled={!isConnected}
-          className="w-4 h-4"
-        />
-        <label
-          htmlFor="audio-playback"
-          className="flex items-center cursor-pointer"
-        >
+        <div className="flex items-center gap-2 rounded-full bg-white px-4 py-2 shadow-sm">
+          <input
+            id="push-to-talk"
+            type="checkbox"
+            checked={isPTTActive}
+            onChange={(e) => setIsPTTActive(e.target.checked)}
+            disabled={!isConnected}
+            className="h-4 w-4"
+          />
+          <label htmlFor="push-to-talk" className="cursor-pointer text-sm text-slate-700">
+            Push to talk
+          </label>
+          <button
+            onMouseDown={handleTalkButtonDown}
+            onMouseUp={handleTalkButtonUp}
+            onTouchStart={handleTalkButtonDown}
+            onTouchEnd={handleTalkButtonUp}
+            disabled={!isPTTActive}
+            className={`rounded-full px-4 py-1.5 text-sm ${
+              isPTTActive
+                ? isPTTUserSpeaking
+                  ? "bg-slate-300 text-slate-900"
+                  : "bg-slate-200 text-slate-900"
+                : "bg-slate-100 text-slate-400"
+            }`}
+          >
+            Talk
+          </button>
+        </div>
+
+        <label className="flex cursor-pointer items-center gap-2 rounded-full bg-white px-4 py-2 text-sm text-slate-700 shadow-sm">
+          <input
+            id="audio-playback"
+            type="checkbox"
+            checked={isAudioPlaybackEnabled}
+            onChange={(e) => setIsAudioPlaybackEnabled(e.target.checked)}
+            disabled={!isConnected}
+            className="h-4 w-4"
+          />
           Audio playback
         </label>
-      </div>
 
-      <div className="flex flex-row items-center gap-2">
-        <input
-          id="logs"
-          type="checkbox"
-          checked={isEventsPaneExpanded}
-          onChange={(e) => setIsEventsPaneExpanded(e.target.checked)}
-          className="w-4 h-4"
-        />
-        <label htmlFor="logs" className="flex items-center cursor-pointer">
+        <label className="flex cursor-pointer items-center gap-2 rounded-full bg-white px-4 py-2 text-sm text-slate-700 shadow-sm">
+          <input
+            id="logs"
+            type="checkbox"
+            checked={isEventsPaneExpanded}
+            onChange={(e) => setIsEventsPaneExpanded(e.target.checked)}
+            className="h-4 w-4"
+          />
           Logs
         </label>
-      </div>
 
-      <div className="flex flex-row items-center gap-2">
-        <div>Codec:</div>
-        {/*
-          Codec selector – Lets you force the WebRTC track to use 8 kHz 
-          PCMU/PCMA so you can preview how the agent will sound 
-          (and how ASR/VAD will perform) when accessed via a 
-          phone network.  Selecting a codec reloads the page with ?codec=...
-          which our App-level logic picks up and applies via a WebRTC monkey
-          patch (see codecPatch.ts).
-        */}
-        <select
-          id="codec-select"
-          value={codec}
-          onChange={handleCodecChange}
-          className="border border-gray-300 rounded-md px-2 py-1 focus:outline-none cursor-pointer"
-        >
-          <option value="opus">Opus (48 kHz)</option>
-          <option value="pcmu">PCMU (8 kHz)</option>
-          <option value="pcma">PCMA (8 kHz)</option>
-        </select>
+        <div className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm text-slate-700 shadow-sm">
+          <span className="font-medium">Codec</span>
+          <select
+            id="codec-select"
+            value={codec}
+            onChange={handleCodecChange}
+            className="cursor-pointer rounded-lg border border-slate-300 bg-white px-2 py-1 focus:outline-none"
+          >
+            <option value="opus">Opus (48 kHz)</option>
+            <option value="pcmu">PCMU (8 kHz)</option>
+            <option value="pcma">PCMA (8 kHz)</option>
+          </select>
+        </div>
       </div>
     </div>
   );

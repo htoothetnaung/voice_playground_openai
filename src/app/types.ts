@@ -15,6 +15,16 @@ export type ModerationCategory = (typeof MODERATION_CATEGORIES)[number];
 export const ModerationCategoryZod = z.enum([...MODERATION_CATEGORIES]);
 
 export type SessionStatus = "DISCONNECTED" | "CONNECTING" | "CONNECTED";
+export type BreadcrumbType =
+  | "default"
+  | "session"
+  | "agent"
+  | "handoff"
+  | "tool_call"
+  | "tool_result"
+  | "supervisor"
+  | "guardrail"
+  | "audio";
 
 export interface ToolParameterProperty {
   type: string;
@@ -77,6 +87,7 @@ export interface TranscriptItem {
   status: "IN_PROGRESS" | "DONE";
   isHidden: boolean;
   guardrailResult?: GuardrailResultType;
+  breadcrumbType?: BreadcrumbType;
 }
 
 export interface Log {

@@ -74,14 +74,20 @@ export function useHandleSessionHistory() {
 
     addTranscriptBreadcrumb(
       `function call: ${function_name}`,
-      function_args
+      {
+        ...(typeof function_args === "object" ? function_args : { arguments: function_args }),
+        _breadcrumbType: "tool_call",
+      }
     );    
   }
   function handleAgentToolEnd(details: any, _agent: any, _functionCall: any, result: any) {
     const lastFunctionCall = extractFunctionCallByName(_functionCall.name, details?.context?.history);
     addTranscriptBreadcrumb(
       `function call result: ${lastFunctionCall?.name}`,
-      maybeParseJson(result)
+      {
+        result: maybeParseJson(result),
+        _breadcrumbType: "tool_result",
+      }
     );
   }
 
@@ -103,7 +109,10 @@ export function useHandleSessionHistory() {
       const guardrailMessage = sketchilyDetectGuardrailMessage(text);
       if (guardrailMessage) {
         const failureDetails = JSON.parse(guardrailMessage);
-        addTranscriptBreadcrumb('Output Guardrail Active', { details: failureDetails });
+        addTranscriptBreadcrumb('Output Guardrail Active', {
+          details: failureDetails,
+          _breadcrumbType: "guardrail",
+        });
       } else {
         addTranscriptMessage(itemId, role, text);
       }

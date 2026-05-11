@@ -13,6 +13,9 @@ import { SessionStatus } from '../types';
 export interface RealtimeSessionCallbacks {
   onConnectionChange?: (status: SessionStatus) => void;
   onAgentHandoff?: (agentName: string) => void;
+  onAgentToolStart?: (toolName: string) => void;
+  onAgentToolEnd?: (toolName: string) => void;
+  onAssistantSpeechStart?: () => void;
 }
 
 export interface ConnectOptions {
@@ -55,6 +58,7 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
         break;
       }
       case "response.audio_transcript.delta": {
+        callbacks.onAssistantSpeechStart?.();
         historyHandlers.handleTranscriptionDelta(event);
         break;
       }
@@ -87,6 +91,21 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
     callbacks.onAgentHandoff?.(agentName);
   };
 
+  const handleAgentToolStart = (details: any, agent: any, functionCall: any) => {
+    callbacks.onAgentToolStart?.(functionCall?.name ?? "unknown_tool");
+    historyHandlers.handleAgentToolStart(details, agent, functionCall);
+  };
+
+  const handleAgentToolEnd = (
+    details: any,
+    agent: any,
+    functionCall: any,
+    result: any
+  ) => {
+    callbacks.onAgentToolEnd?.(functionCall?.name ?? "unknown_tool");
+    historyHandlers.handleAgentToolEnd(details, agent, functionCall, result);
+  };
+
   useEffect(() => {
     if (sessionRef.current) {
       // Log server errors
@@ -99,8 +118,8 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
 
       // history events
       sessionRef.current.on("agent_handoff", handleAgentHandoff);
-      sessionRef.current.on("agent_tool_start", historyHandlers.handleAgentToolStart);
-      sessionRef.current.on("agent_tool_end", historyHandlers.handleAgentToolEnd);
+      sessionRef.current.on("agent_tool_start", handleAgentToolStart);
+      sessionRef.current.on("agent_tool_end", handleAgentToolEnd);
       sessionRef.current.on("history_updated", historyHandlers.handleHistoryUpdated);
       sessionRef.current.on("history_added", historyHandlers.handleHistoryAdded);
       sessionRef.current.on("guardrail_tripped", historyHandlers.handleGuardrailTripped);
