@@ -21,7 +21,7 @@ function App() {
   const searchParams = useSearchParams()!;
   const urlCodec = searchParams.get("codec") || "opus";
   const selectedArchitecture =
-    searchParams.get("architecture") || "openai_native";
+    searchParams.get("architecture") || "cascaded_pipeline";
   const { addTranscriptMessage, addTranscriptBreadcrumb } = useTranscript();
   const { logClientEvent } = useEvent();
   const {
@@ -214,7 +214,12 @@ function App() {
     sendEvent({
       type: "session.update",
       session: {
-        turn_detection: turnDetection,
+        type: "realtime",
+        audio: {
+          input: {
+            turn_detection: turnDetection,
+          },
+        },
       },
     });
 

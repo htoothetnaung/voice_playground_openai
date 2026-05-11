@@ -80,6 +80,8 @@ class Settings(BaseSettings):
         default="backend/.data/callcenter_sessions.db",
         alias="CALLCENTER_SESSION_DB_PATH",
     )
+    mongodb_uri: str = Field(default="mongodb://127.0.0.1:27017", alias="MONGODB_URI")
+    mongodb_db: str = Field(default="atenxion_callcenter", alias="MONGODB_DB")
 
     @property
     def allowed_origins(self) -> list[str]:

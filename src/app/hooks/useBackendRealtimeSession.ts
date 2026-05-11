@@ -109,10 +109,38 @@ function float32ToInt16Bytes(input: Float32Array): ArrayBuffer {
   return buffer;
 }
 
+function resampleLinear(
+  input: Float32Array,
+  inputSampleRate: number,
+  outputSampleRate: number,
+): Float32Array {
+  if (inputSampleRate === outputSampleRate) {
+    return input;
+  }
+
+  const outputLength = Math.max(
+    1,
+    Math.round((input.length * outputSampleRate) / inputSampleRate),
+  );
+  const output = new Float32Array(outputLength);
+  const ratio = inputSampleRate / outputSampleRate;
+
+  for (let i = 0; i < outputLength; i += 1) {
+    const sourceIndex = i * ratio;
+    const lowerIndex = Math.floor(sourceIndex);
+    const upperIndex = Math.min(lowerIndex + 1, input.length - 1);
+    const weight = sourceIndex - lowerIndex;
+    output[i] = input[lowerIndex] * (1 - weight) + input[upperIndex] * weight;
+  }
+
+  return output;
+}
+
 export function useBackendRealtimeSession(
   callbacks: BackendRealtimeSessionCallbacks = {},
 ) {
   const wsRef = useRef<WebSocket | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
   const [status, setStatus] = useState<SessionStatus>("DISCONNECTED");
   const playbackEnabledRef = useRef(true);
   const manualPttModeRef = useRef(false);
@@ -130,6 +158,7 @@ export function useBackendRealtimeSession(
   const microphoneStreamRef = useRef<MediaStream | null>(null);
   const processorNodeRef = useRef<ScriptProcessorNode | null>(null);
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const inputSilenceGainRef = useRef<GainNode | null>(null);
   const hasBufferedAudioRef = useRef(false);
   const callbacksRef = useRef<BackendRealtimeSessionCallbacks>(callbacks);
 
@@ -304,6 +333,8 @@ export function useBackendRealtimeSession(
 
       switch (event.type) {
         case "session_ready":
+          sessionIdRef.current =
+            typeof event.session_id === "string" ? event.session_id : null;
           addTranscriptBreadcrumb(`Python runtime connected: ${event.agent_name}`, {
             sessionId: event.session_id,
             traceId: event.trace_id,
@@ -352,6 +383,19 @@ export function useBackendRealtimeSession(
             ...event,
             _breadcrumbType: "session",
           });
+          break;
+        case "ticket_created":
+          addTranscriptBreadcrumb(
+            `Ticket created: ${event.ticket?.title ?? "Admin review"}`,
+            {
+              ticketId: event.ticket?.ticket_id,
+              kind: event.ticket?.kind,
+              priority: event.ticket?.priority,
+              status: event.ticket?.status,
+              summary: event.ticket?.summary,
+              _breadcrumbType: "ticket",
+            },
+          );
           break;
         case "history_added":
           handleHistoryItem(event.item);
@@ -473,26 +517,37 @@ export function useBackendRealtimeSession(
       if (!shouldStreamAudio) return;
 
       const input = event.inputBuffer.getChannelData(0);
-      const pcmBuffer = float32ToInt16Bytes(input);
+      const resampledInput = resampleLinear(
+        input,
+        event.inputBuffer.sampleRate,
+        PCM_SAMPLE_RATE,
+      );
+      const pcmBuffer = float32ToInt16Bytes(resampledInput);
       if (pcmBuffer.byteLength === 0) return;
       hasBufferedAudioRef.current = true;
       ws.send(pcmBuffer);
     };
 
+    const inputSilenceGain = audioContext.createGain();
+    inputSilenceGain.gain.value = 0;
     sourceNode.connect(processorNode);
-    processorNode.connect(audioContext.destination);
+    processorNode.connect(inputSilenceGain);
+    inputSilenceGain.connect(audioContext.destination);
 
     microphoneStreamRef.current = stream;
     inputAudioContextRef.current = audioContext;
     sourceNodeRef.current = sourceNode;
     processorNodeRef.current = processorNode;
+    inputSilenceGainRef.current = inputSilenceGain;
   }, []);
 
   const cleanupMicrophonePipeline = useCallback(async () => {
     processorNodeRef.current?.disconnect();
     sourceNodeRef.current?.disconnect();
+    inputSilenceGainRef.current?.disconnect();
     processorNodeRef.current = null;
     sourceNodeRef.current = null;
+    inputSilenceGainRef.current = null;
 
     if (inputAudioContextRef.current) {
       await inputAudioContextRef.current.close();
@@ -541,6 +596,7 @@ export function useBackendRealtimeSession(
       ws.onclose = () => {
         stopPlayback();
         wsRef.current = null;
+        sessionIdRef.current = null;
         updateStatus("DISCONNECTED");
       };
     },
@@ -558,6 +614,7 @@ export function useBackendRealtimeSession(
     pttSpeakingRef.current = false;
     manualPttModeRef.current = false;
     hasBufferedAudioRef.current = false;
+    sessionIdRef.current = null;
     wsRef.current?.close();
     wsRef.current = null;
     void cleanupMicrophonePipeline();
@@ -574,9 +631,22 @@ export function useBackendRealtimeSession(
   const sendEvent = useCallback((event: any) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const eventType = typeof event?.type === "string" ? event.type : "client_event";
+
+    ws.send(
+      JSON.stringify({
+        type: "client_event",
+        event: {
+          type: eventType,
+          session_id: sessionIdRef.current,
+          payload: event,
+        },
+      }),
+    );
 
     if (event?.type === "session.update") {
-      manualPttModeRef.current = event?.session?.turn_detection == null;
+      const turnDetection = event?.session?.audio?.input?.turn_detection;
+      manualPttModeRef.current = turnDetection == null;
       return;
     }
 
@@ -625,6 +695,7 @@ export function useBackendRealtimeSession(
       manualPttModeRef.current = false;
       wsRef.current?.close();
       wsRef.current = null;
+      sessionIdRef.current = null;
       await cleanupMicrophonePipeline();
       if (outputAudioContextRef.current) {
         await outputAudioContextRef.current.close();

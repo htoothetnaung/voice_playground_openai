@@ -1,12 +1,14 @@
 """Exposes scenario metadata, a text turn endpoint, and the realtime WebSocket entry point for both supported voice architectures."""
 from typing import Any
 
-from fastapi import APIRouter, Depends, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, WebSocket
 from pydantic import BaseModel, Field
 
 from app.agents.callcenter.cascaded.runtime import CallCenterCascadedRuntime
+from app.agents.callcenter.data_repository import CallCenterDataRepository
 from app.agents.callcenter.realtime_runtime import CallCenterRealtimeRuntime
 from app.agents.callcenter.runner import CallCenterRunner
+from app.agents.callcenter.session_audit import SessionAuditLogger
 from app.core.config import Settings, get_settings
 
 router = APIRouter()
@@ -26,6 +28,12 @@ class CallCenterRunResponse(BaseModel):
     session_id: str
     final_output: Any
     trace: dict[str, Any]
+
+
+class ClientSessionEventRequest(BaseModel):
+    """Client-originated audit event payload for admin review."""
+    direction: str = Field(default="client")
+    event: dict[str, Any]
 
 
 @router.get("/scenario")
@@ -99,6 +107,56 @@ async def scenario_metadata() -> dict[str, Any]:
     }
 
 
+@router.post("/seed")
+async def seed_callcenter_mock_data(
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Seed the current demo mock records into MongoDB when a local server is available."""
+    seeded = await CallCenterDataRepository(settings).seed_mock_data()
+    return {
+        "seeded": seeded,
+        "database": settings.mongodb_db,
+        "mongo_available": seeded,
+    }
+
+
+@router.post("/sessions/{session_id}/events")
+async def record_client_session_event(
+    session_id: str,
+    payload: ClientSessionEventRequest,
+    settings: Settings = Depends(get_settings),
+) -> dict[str, bool]:
+    """Persist a client-side event for admin review without storing raw audio."""
+    await SessionAuditLogger(settings).record_event(
+        session_id,
+        payload.event,
+        direction=payload.direction,
+    )
+    return {"accepted": True}
+
+
+@router.get("/admin/sessions")
+async def list_admin_sessions(
+    limit: int = 25,
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Return recent stored sessions for the admin console."""
+    sessions = await SessionAuditLogger(settings).list_sessions(limit=max(1, min(limit, 100)))
+    return {"sessions": sessions}
+
+
+@router.get("/admin/sessions/{session_id}")
+async def get_admin_session_detail(
+    session_id: str,
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Return transcript, event, and ticket details for one stored session."""
+    detail = await SessionAuditLogger(settings).session_detail(session_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return detail
+
+
 @router.post("/run", response_model=CallCenterRunResponse)
 async def run_callcenter_turn(
     payload: CallCenterRunRequest,
@@ -118,6 +176,8 @@ async def callcenter_realtime_ws(websocket: WebSocket) -> None:
     """Accept the call-center WebSocket and choose either OpenAI native realtime or the cascaded voice runtime."""
     settings = get_settings()
     architecture = websocket.query_params.get("architecture") or settings.voice_provider
+    if architecture == "openai_native" and settings.voice_provider == "openai_native":
+        architecture = "cascaded_pipeline"
     if architecture == "cascaded_pipeline":
         runtime = CallCenterCascadedRuntime(settings)
     else:

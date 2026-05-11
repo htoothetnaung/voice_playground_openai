@@ -2,18 +2,17 @@
 from agents import RunContextWrapper, function_tool
 
 from app.agents.callcenter.context import CallCenterContext
-from app.agents.callcenter.mock_data import (
-    ATENXION_ACTIVE_SERVICES,
-    ATENXION_CUSTOMER_PROFILE,
-    ATENXION_LATEST_BILL,
-    ATENXION_PLAN_CATALOG,
-    ATENXION_POLICY_DOCS,
-)
+from app.agents.callcenter.data_repository import CallCenterDataRepository
 
 
 def create_case_id(prefix: str) -> str:
     """Create deterministic demo case or work-order identifiers tied to the mock Atenxion account."""
-    return f"{prefix}-{ATENXION_CUSTOMER_PROFILE['account_id']}-01"
+    return f"{prefix}-ATX-204871-01"
+
+
+def _repository() -> CallCenterDataRepository:
+    """Create the data repository used by async tool functions."""
+    return CallCenterDataRepository()
 
 
 def _verification_required() -> dict:
@@ -39,18 +38,19 @@ async def lookup_customer_profile(
     phone_number: str,
 ) -> dict:
     """Look up the Atenxion customer profile by phone number."""
-    matched = phone_number == ATENXION_CUSTOMER_PROFILE["phone_number"]
+    customer_profile = await _repository().customer_profile()
+    matched = phone_number == customer_profile["phone_number"]
     if matched:
-        ctx.context.active_account_id = ATENXION_CUSTOMER_PROFILE["account_id"]
+        ctx.context.active_account_id = customer_profile["account_id"]
         return {
             "found": True,
             "profile": {
-                "account_id": ATENXION_CUSTOMER_PROFILE["account_id"],
-                "full_name": ATENXION_CUSTOMER_PROFILE["full_name"],
-                "phone_number": ATENXION_CUSTOMER_PROFILE["phone_number"],
-                "service_address": ATENXION_CUSTOMER_PROFILE["service_address"],
-                "current_plan": ATENXION_CUSTOMER_PROFILE["current_plan"],
-                "sentiment": ATENXION_CUSTOMER_PROFILE["sentiment"],
+                "account_id": customer_profile["account_id"],
+                "full_name": customer_profile["full_name"],
+                "phone_number": customer_profile["phone_number"],
+                "service_address": customer_profile["service_address"],
+                "current_plan": customer_profile["current_plan"],
+                "sentiment": customer_profile["sentiment"],
             },
         }
     return {
@@ -72,17 +72,18 @@ async def verify_caller(
     pin_last4: str,
 ) -> dict:
     """Verify the caller using phone number, date of birth, and 4-digit PIN."""
+    customer_profile = await _repository().customer_profile()
     verified = (
-        phone_number == ATENXION_CUSTOMER_PROFILE["phone_number"]
-        and date_of_birth == ATENXION_CUSTOMER_PROFILE["date_of_birth"]
-        and pin_last4 == ATENXION_CUSTOMER_PROFILE["pin_last4"]
+        phone_number == customer_profile["phone_number"]
+        and date_of_birth == customer_profile["date_of_birth"]
+        and pin_last4 == customer_profile["pin_last4"]
     )
     ctx.context.verified = verified
     if verified:
-        ctx.context.active_account_id = ATENXION_CUSTOMER_PROFILE["account_id"]
+        ctx.context.active_account_id = customer_profile["account_id"]
         return {
             "verified": True,
-            "account_id": ATENXION_CUSTOMER_PROFILE["account_id"],
+            "account_id": customer_profile["account_id"],
             "security_status": "passed",
         }
     return {
@@ -104,9 +105,10 @@ async def lookup_active_services(
     """Return the active Atenxion services on an account."""
     if not _is_verified(ctx):
         return _verification_required()
+    active_services = await _repository().active_services()
     return {
         "requested_account_id": account_id,
-        "services": ATENXION_ACTIVE_SERVICES["services"],
+        "services": active_services["services"],
     }
 
 
@@ -158,9 +160,10 @@ async def get_latest_bill(
     """Fetch the latest Atenxion bill for an account."""
     if not _is_verified(ctx):
         return _verification_required()
+    latest_bill = await _repository().latest_bill()
     return {
         "requested_account_id": account_id,
-        **ATENXION_LATEST_BILL,
+        **latest_bill,
     }
 
 
@@ -217,11 +220,12 @@ async def apply_goodwill_credit(
         return _verification_required()
     approved = amount_usd <= 20
     if approved:
+        latest_bill = await _repository().latest_bill()
         return {
             "requested_account_id": account_id,
             "approved": True,
             "credit_amount_usd": amount_usd,
-            "posted_to_bill_id": ATENXION_LATEST_BILL["bill_id"],
+            "posted_to_bill_id": latest_bill["bill_id"],
             "rationale": rationale,
         }
     return {
@@ -310,9 +314,10 @@ async def lookup_plan_options(
     """Return available Atenxion plan options for the account."""
     if not _is_verified(ctx):
         return _verification_required()
+    plan_catalog = await _repository().plan_catalog()
     return {
         "requested_account_id": account_id,
-        "plans": ATENXION_PLAN_CATALOG,
+        "plans": plan_catalog,
     }
 
 
@@ -325,13 +330,15 @@ async def compare_plans(
     """Compare the customer's current plan against a target plan."""
     if not _is_verified(ctx):
         return _verification_required()
+    customer_profile = await _repository().customer_profile()
+    plan_catalog = await _repository().plan_catalog()
     target = next(
-        (plan for plan in ATENXION_PLAN_CATALOG if plan["code"] == target_plan_code),
+        (plan for plan in plan_catalog if plan["code"] == target_plan_code),
         None,
     )
     return {
         "requested_account_id": account_id,
-        "current_plan": ATENXION_CUSTOMER_PROFILE["current_plan"],
+        "current_plan": customer_profile["current_plan"],
         "target_plan": target,
         "tradeoff_summary": (
             f"Switching to {target['name']} changes the monthly rate to ${target['monthly_price_usd']} and changes included perks."
@@ -386,8 +393,9 @@ async def lookup_policy_document(
     topic: str,
 ) -> dict:
     """Look up an Atenxion policy document by topic."""
+    policy_docs = await _repository().policy_docs()
     matches = [
-        doc for doc in ATENXION_POLICY_DOCS if topic.lower() in doc["topic"].lower()
+        doc for doc in policy_docs if topic.lower() in doc["topic"].lower()
     ]
     return {"matches": matches}
 

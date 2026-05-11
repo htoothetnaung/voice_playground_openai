@@ -144,6 +144,35 @@ def test_human_escalation_returns_fixed_supervisor_number() -> None:
     assert "Thank you very much for calling Atenxion" in response
 
 
+def test_supervisor_request_is_not_human_escalation() -> None:
+    """Verify plain supervisor requests stay inside the simulated AI supervisor flow."""
+    context = CallCenterContext(session_id="session", trace_id="trace", greeted=True)
+
+    assert _fixed_response_for_user_text("I want to talk to a supervisor", context, "billingAgent") is None
+    assert (
+        _direct_handoff_agent_name("I want to talk to a supervisor", "billingAgent", is_verified=True)
+        == "supervisorAgent"
+    )
+
+
+def test_manager_request_routes_to_supervisor_agent() -> None:
+    """Verify manager synonyms route to the AI supervisor agent."""
+    assert (
+        _direct_handoff_agent_name("Can I speak with a manager?", "callcenteragent", is_verified=True)
+        == "supervisorAgent"
+    )
+
+
+def test_human_supervisor_request_still_returns_phone_number() -> None:
+    """Verify explicit human supervisor wording exits the simulation."""
+    context = CallCenterContext(session_id="session", trace_id="trace", greeted=True)
+
+    response = _fixed_response_for_user_text("I need a human supervisor", context, "billingAgent")
+
+    assert response is not None
+    assert "09755083294" in response
+
+
 def test_case_closed_confirmation_uses_final_closing_line() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     context = CallCenterContext(session_id="session", trace_id="trace", greeted=True)

@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import base64
 from dataclasses import asdict, is_dataclass
+from datetime import date, datetime
 from typing import Any
+
+try:
+    from bson import ObjectId
+except Exception:  # pragma: no cover - bson is provided by pymongo/motor in normal installs.
+    ObjectId = None  # type: ignore[assignment]
 
 
 def serialize(value: Any) -> Any:
@@ -17,6 +23,10 @@ def serialize(value: Any) -> Any:
         return [serialize(item) for item in value]
     if isinstance(value, bytes):
         return base64.b64encode(value).decode("utf-8")
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if ObjectId is not None and isinstance(value, ObjectId):
+        return str(value)
     if hasattr(value, "model_dump"):
         return serialize(value.model_dump())
     if hasattr(value, "__dict__") and not isinstance(value, type):

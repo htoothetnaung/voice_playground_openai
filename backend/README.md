@@ -56,6 +56,10 @@ NEXT_PUBLIC_CALLCENTER_BACKEND_WS_URL=ws://127.0.0.1:8000/api/v1/callcenter/real
 ## Notes
 
 - Session memory for `callcenteragent` is stored in `backend/.data/callcenter_sessions.db`.
+- Admin-review session records, transcripts, events, and seedable mock data use MongoDB when
+  available at `MONGODB_URI` / `MONGODB_DB`; run
+  `uv run --project backend python scripts/seed_callcenter_mongo.py` from the repo root after
+  starting your local MongoDB server.
 - The provider gateway currently implements only `openai_native`, but the interface is meant to stay
   stable for later provider benchmarking work.
 - The live callcenter voice runtime now runs from Python over a backend WebSocket bridge instead of

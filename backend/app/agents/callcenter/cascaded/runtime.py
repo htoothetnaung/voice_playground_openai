@@ -23,6 +23,7 @@ from app.agents.callcenter.cascaded.metrics import TurnMetrics
 from app.agents.callcenter.cascaded.sentence_buffer import SentenceBuffer
 from app.agents.callcenter.context import CallCenterContext
 from app.agents.callcenter.graph import build_callcenter_agent_map
+from app.agents.callcenter.session_audit import AuditedWebSocket, SessionAuditLogger
 from app.core.config import Settings
 
 HANDOFF_TRANSFER_DELAY_SECONDS = 2.5
@@ -72,6 +73,15 @@ class CallCenterCascadedRuntime:
         context = CallCenterContext(session_id=effective_session_id, trace_id=trace_id)
         context.current_agent_name = starting_agent.name
         session = SQLiteSession(effective_session_id, str(self.session_db_path))
+        audit_logger = SessionAuditLogger(self.settings)
+        final_audit_status = "ended"
+        await audit_logger.start_session(
+            session_id=effective_session_id,
+            trace_id=trace_id,
+            architecture=self.architecture,
+            starting_agent=starting_agent.name,
+        )
+        audited_websocket = AuditedWebSocket(websocket, audit_logger, effective_session_id)
 
         transcriber = self.transcriber or self._build_transcriber()
         tts_adapter = self.tts_adapter or self._build_tts_adapter()
@@ -83,7 +93,7 @@ class CallCenterCascadedRuntime:
                 try:
                     await transcriber.start()
                 except Exception as exc:
-                    await websocket.send_json(
+                    await audited_websocket.send_json(
                         {
                             "type": "error",
                             "error": f"Deepgram STT connection failed: {exc}",
@@ -91,14 +101,14 @@ class CallCenterCascadedRuntime:
                     )
                     transcriber = None
             if transcriber is None:
-                await websocket.send_json(
+                await audited_websocket.send_json(
                     {
                         "type": "error",
                         "error": "Microphone transcription is disabled; text messages can still use the cascaded agent/TTS path.",
                     }
                 )
 
-            await websocket.send_json(
+            await audited_websocket.send_json(
                 {
                     "type": "session_ready",
                     "session_id": effective_session_id,
@@ -108,7 +118,7 @@ class CallCenterCascadedRuntime:
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
             )
-            await websocket.send_json(
+            await audited_websocket.send_json(
                 {
                     "type": "architecture_selected",
                     "architecture": self.architecture,
@@ -119,11 +129,11 @@ class CallCenterCascadedRuntime:
             )
 
             consumer_task = asyncio.create_task(
-                self._consume_client(websocket, transcriber, starting_agent, context, session, tts_adapter)
+                self._consume_client(audited_websocket, transcriber, starting_agent, context, session, tts_adapter)
             )
             if transcriber is not None:
                 transcript_task = asyncio.create_task(
-                    self._consume_transcripts(websocket, transcriber, starting_agent, context, session, tts_adapter)
+                    self._consume_transcripts(audited_websocket, transcriber, starting_agent, context, session, tts_adapter)
                 )
 
             wait_tasks = {consumer_task}
@@ -140,6 +150,9 @@ class CallCenterCascadedRuntime:
                     await task
         except WebSocketDisconnect:
             pass
+        except Exception:
+            final_audit_status = "error"
+            raise
         finally:
             if self._response_task and not self._response_task.done():
                 self._response_task.cancel()
@@ -148,6 +161,7 @@ class CallCenterCascadedRuntime:
                     task.cancel()
             if transcriber is not None:
                 await transcriber.close()
+            await audit_logger.end_session(effective_session_id, status=final_audit_status)
             with contextlib.suppress(Exception):
                 await websocket.close()
 
@@ -191,14 +205,20 @@ class CallCenterCascadedRuntime:
                 raise WebSocketDisconnect()
 
             if message.get("bytes") is not None:
-                if self._response_task and not self._response_task.done():
-                    self._response_task.cancel()
-                    await websocket.send_json({"type": "audio_interrupted"})
                 if self._active_stt_metrics is None:
                     self._active_stt_metrics = self._new_metrics()
                 self._active_stt_metrics.user_audio_bytes += len(message["bytes"])
                 if transcriber is not None:
-                    await transcriber.send_audio(message["bytes"])
+                    try:
+                        await transcriber.send_audio(message["bytes"])
+                    except Exception as exc:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "error": f"Deepgram STT stream unavailable: {exc}",
+                            }
+                        )
+                        transcriber = None
                 continue
 
             if message.get("text") is None:
@@ -220,6 +240,12 @@ class CallCenterCascadedRuntime:
                 if self._response_task and not self._response_task.done():
                     self._response_task.cancel()
                 await websocket.send_json({"type": "audio_interrupted"})
+            elif message_type == "client_event":
+                await websocket.audit_logger.record_event(
+                    websocket.session_id,
+                    payload.get("event") if isinstance(payload.get("event"), dict) else payload,
+                    direction="client",
+                )
             elif message_type == "audio_commit" and transcriber is not None:
                 await transcriber.flush_audio()
             elif message_type == "ping":
@@ -647,12 +673,26 @@ def _direct_handoff_agent_name(
     is_verified: bool = True,
 ) -> str | None:
     """Apply deterministic keyword routing from the triage agent after verification."""
-    if active_agent_name != "callcenteragent":
-        return None
     if not is_verified:
         return None
 
     normalized = f" {text.lower()} "
+    supervisor_terms = (
+        " supervisor",
+        " manager",
+        " floor supervisor",
+        " escalate to supervisor",
+        " talk to supervisor",
+        " speak to supervisor",
+        " talk to a supervisor",
+        " speak to a supervisor",
+    )
+    if active_agent_name != "supervisorAgent" and any(term in normalized for term in supervisor_terms):
+        return "supervisorAgent"
+
+    if active_agent_name != "callcenteragent":
+        return None
+
     billing_terms = (
         " bill ",
         " billing ",
@@ -733,17 +773,17 @@ def _is_first_greeting(normalized: str, context: CallCenterContext, active_agent
 
 
 def _is_human_escalation_request(normalized: str) -> bool:
-    """Detect requests for a real human or supervisor."""
+    """Detect requests for a real human, not the simulated AI supervisor."""
     human_terms = (
         "human",
         "real person",
+        "real agent",
+        "live person",
         "live agent",
+        "live representative",
         "representative",
-        "human supervisor",
-        "talk to supervisor",
-        "speak to supervisor",
-        "talk to a supervisor",
-        "speak to a supervisor",
+        "human agent",
+        "human representative",
     )
     return any(term in normalized for term in human_terms)
 

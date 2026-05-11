@@ -109,9 +109,16 @@ class DeepgramStreamingTranscriber:
         self._socket: Any | None = None
         self._receiver_task: asyncio.Task[None] | None = None
         self._keepalive_task: asyncio.Task[None] | None = None
+        self._send_lock = asyncio.Lock()
+        self._closed = False
 
     async def start(self) -> None:
         """Open the Deepgram WebSocket and launch receive and keepalive tasks."""
+        self._closed = False
+        await self._open_socket()
+
+    async def _open_socket(self) -> None:
+        """Open a Deepgram WebSocket and start background receive/keepalive tasks."""
         import websockets
 
         self._socket = await websockets.connect(
@@ -125,8 +132,23 @@ class DeepgramStreamingTranscriber:
 
     async def send_audio(self, audio: bytes) -> None:
         """Forward raw PCM bytes from the browser to Deepgram."""
-        if self._socket is not None:
-            await self._socket.send(audio)
+        if self._closed:
+            return
+
+        async with self._send_lock:
+            if self._socket is None:
+                await self._restart_socket()
+
+            try:
+                if self._socket is not None:
+                    await self._socket.send(audio)
+            except _connection_closed_errors():
+                await self._restart_socket()
+                try:
+                    if self._socket is not None:
+                        await self._socket.send(audio)
+                except _connection_closed_errors():
+                    self._socket = None
 
     async def flush_audio(self, duration_ms: int = 900) -> None:
         """Send a short block of silence to encourage Deepgram endpointing when the client commits audio."""
@@ -135,6 +157,7 @@ class DeepgramStreamingTranscriber:
 
     async def close(self) -> None:
         """Cancel Deepgram background tasks and close the provider WebSocket."""
+        self._closed = True
         for task in (self._receiver_task, self._keepalive_task):
             if task and not task.done():
                 task.cancel()
@@ -144,6 +167,26 @@ class DeepgramStreamingTranscriber:
                 await self._socket.close()
             except Exception:
                 pass
+        self._socket = None
+
+    async def _restart_socket(self) -> None:
+        """Reconnect after Deepgram closes the stream without taking down the app WebSocket."""
+        if self._closed:
+            return
+
+        for task in (self._receiver_task, self._keepalive_task):
+            if task and not task.done():
+                task.cancel()
+
+        if self._socket is not None:
+            try:
+                await self._socket.close()
+            except Exception:
+                pass
+
+        self._socket = None
+        self.aggregator = DeepgramTranscriptAggregator(self.model)
+        await self._open_socket()
 
     def _url(self) -> str:
         """Build the Deepgram streaming URL with model-specific query parameters."""
@@ -170,22 +213,31 @@ class DeepgramStreamingTranscriber:
     async def _receive_loop(self) -> None:
         """Receive Deepgram WebSocket messages and enqueue normalized transcript events."""
         assert self._socket is not None
-        async for raw_message in self._socket:
-            if isinstance(raw_message, bytes):
-                continue
-            try:
-                message = json.loads(raw_message)
-            except json.JSONDecodeError:
-                continue
-            for event in self.aggregator.ingest(message):
-                await self.events.put(event)
+        try:
+            async for raw_message in self._socket:
+                if isinstance(raw_message, bytes):
+                    continue
+                try:
+                    message = json.loads(raw_message)
+                except json.JSONDecodeError:
+                    continue
+                for event in self.aggregator.ingest(message):
+                    await self.events.put(event)
+        except _connection_closed_errors():
+            if not self._closed:
+                self._socket = None
 
     async def _keepalive_loop(self) -> None:
         """Periodically send Deepgram keepalive messages while the stream is open."""
         while True:
             await asyncio.sleep(5)
-            if self._socket is not None:
-                await self._socket.send(json.dumps({"type": "KeepAlive"}))
+            try:
+                if self._socket is not None:
+                    await self._socket.send(json.dumps({"type": "KeepAlive"}))
+            except _connection_closed_errors():
+                if not self._closed:
+                    self._socket = None
+                return
 
 
 def _extract_transcript(message: dict[str, Any]) -> str:
@@ -195,3 +247,10 @@ def _extract_transcript(message: dict[str, Any]) -> str:
     if not alternatives:
         return ""
     return str(alternatives[0].get("transcript") or "")
+
+
+def _connection_closed_errors() -> tuple[type[BaseException], ...]:
+    """Return the installed websockets close exception classes."""
+    import websockets
+
+    return (websockets.exceptions.ConnectionClosed,)

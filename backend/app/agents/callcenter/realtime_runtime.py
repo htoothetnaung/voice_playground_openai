@@ -10,10 +10,12 @@ from typing import Any
 from uuid import uuid4
 
 from agents.realtime import RealtimeRunner
+from agents.realtime.model_inputs import RealtimeModelSendRawMessage
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.agents.callcenter.context import CallCenterContext
 from app.agents.callcenter.realtime_graph import build_callcenter_realtime_agents
+from app.agents.callcenter.session_audit import AuditedWebSocket, SessionAuditLogger
 from app.core.config import Settings
 
 
@@ -59,6 +61,16 @@ class CallCenterRealtimeRuntime:
             session_id=effective_session_id,
             trace_id=trace_id,
         )
+        context.current_agent_name = starting_agent.name
+        audit_logger = SessionAuditLogger(self.settings)
+        final_audit_status = "ended"
+        await audit_logger.start_session(
+            session_id=effective_session_id,
+            trace_id=trace_id,
+            architecture="openai_native",
+            starting_agent=starting_agent.name,
+        )
+        audited_websocket = AuditedWebSocket(websocket, audit_logger, effective_session_id)
 
         runner = RealtimeRunner(
             starting_agent=starting_agent,
@@ -102,17 +114,18 @@ class CallCenterRealtimeRuntime:
 
         try:
             async with session:
-                await websocket.send_json(
+                await audited_websocket.send_json(
                     {
                         "type": "session_ready",
                         "session_id": effective_session_id,
                         "trace_id": trace_id,
                         "agent_name": starting_agent.name,
+                        "architecture": "openai_native",
                         "timestamp": datetime.now(UTC).isoformat(),
                     }
                 )
-                consumer_task = asyncio.create_task(self._consume_client(websocket, session))
-                producer_task = asyncio.create_task(self._produce_events(websocket, session))
+                consumer_task = asyncio.create_task(self._consume_client(audited_websocket, session))
+                producer_task = asyncio.create_task(self._produce_events(audited_websocket, session))
 
                 done, pending = await asyncio.wait(
                     {consumer_task, producer_task},
@@ -130,11 +143,15 @@ class CallCenterRealtimeRuntime:
                         await task
         except WebSocketDisconnect:
             pass
+        except Exception:
+            final_audit_status = "error"
+            raise
         finally:
             if consumer_task and not consumer_task.done():
                 consumer_task.cancel()
             if producer_task and not producer_task.done():
                 producer_task.cancel()
+            await audit_logger.end_session(effective_session_id, status=final_audit_status)
             with contextlib.suppress(Exception):
                 await websocket.close()
 
@@ -160,10 +177,40 @@ class CallCenterRealtimeRuntime:
                 await session.send_message(payload.get("text", ""))
             elif message_type == "interrupt":
                 await session.interrupt()
+            elif message_type == "client_event":
+                event = payload.get("event") if isinstance(payload.get("event"), dict) else payload
+                await websocket.audit_logger.record_event(
+                    websocket.session_id,
+                    event,
+                    direction="client",
+                )
+                await self._forward_supported_client_event(session, event)
             elif message_type == "audio_commit":
-                await session.send_audio(b"", commit=True)
+                await _send_raw_model_event(session, "input_audio_buffer.commit")
+                await _send_raw_model_event(session, "response.create")
             elif message_type == "ping":
                 await websocket.send_json({"type": "pong"})
+
+    async def _forward_supported_client_event(self, session: Any, event: Any) -> None:
+        """Apply browser control events that affect microphone turn-taking in the native realtime session."""
+        if not isinstance(event, dict):
+            return
+
+        client_payload = event.get("payload")
+        if not isinstance(client_payload, dict):
+            return
+
+        event_type = client_payload.get("type")
+        if event_type == "input_audio_buffer.clear":
+            await _send_raw_model_event(session, "input_audio_buffer.clear")
+        elif event_type == "session.update":
+            session_payload = client_payload.get("session")
+            if isinstance(session_payload, dict):
+                await _send_raw_model_event(
+                    session,
+                    "session.update",
+                    {"session": session_payload},
+                )
 
     async def _produce_events(self, websocket: WebSocket, session: Any) -> None:
         """Read provider or SDK events and stream normalized JSON payloads back to the frontend."""
@@ -252,3 +299,19 @@ class CallCenterRealtimeRuntime:
                 "data": _serialize(event.data),
             }
         return None
+
+
+async def _send_raw_model_event(
+    session: Any,
+    event_type: str,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    """Send a raw Realtime API event through the Agents SDK without adding audio bytes."""
+    await session.model.send_event(
+        RealtimeModelSendRawMessage(
+            message={
+                "type": event_type,
+                "other_data": payload or {},
+            }
+        )
+    )

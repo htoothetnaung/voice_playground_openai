@@ -24,7 +24,8 @@ export type BreadcrumbType =
   | "tool_result"
   | "supervisor"
   | "guardrail"
-  | "audio";
+  | "audio"
+  | "ticket";
 
 export interface ToolParameterProperty {
   type: string;

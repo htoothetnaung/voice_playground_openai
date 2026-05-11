@@ -58,6 +58,13 @@ function getBreadcrumbPresentation(
         wrapper: "border-sky-200 bg-sky-50/80 text-sky-950",
         badgeClass: "bg-sky-100 text-sky-700",
       };
+    case "ticket":
+      return {
+        badge: "Ticket",
+        wrapper:
+          "border-l-4 border-l-cyan-500 border-cyan-200 bg-[linear-gradient(135deg,#ecfeff_0%,#f8fafc_55%,#fff7ed_100%)] text-slate-950 shadow-sm",
+        badgeClass: "bg-slate-950 text-cyan-100",
+      };
     case "agent":
       return {
         badge: "Agent",
