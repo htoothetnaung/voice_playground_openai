@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
-export function useFillerAudio() {
+export function useFillerAudio(enabled: boolean = true) {
   const transferAudioRef = useRef<HTMLAudioElement | null>(null);
   const transferStopTimerRef = useRef<number | null>(null);
   const pendingTransferDurationMsRef = useRef<number | undefined>(undefined);
   const pendingModeRef = useRef<"transfer" | null>(null);
   const assistantAudioActiveRef = useRef(false);
+  const enabledRef = useRef(enabled);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -41,6 +42,13 @@ export function useFillerAudio() {
     }
   }, []);
 
+  useEffect(() => {
+    enabledRef.current = enabled;
+    if (!enabled) {
+      stopAll();
+    }
+  }, [enabled, stopAll]);
+
   const stopTransfer = useCallback(() => {
     if (pendingModeRef.current === "transfer") {
       pendingModeRef.current = null;
@@ -56,6 +64,7 @@ export function useFillerAudio() {
   }, []);
 
   const startTransferAudio = useCallback((maxDurationMs: number = 3500) => {
+    if (!enabledRef.current) return;
     stopAll(false);
     const audio = transferAudioRef.current;
     if (!audio) return;
@@ -82,6 +91,7 @@ export function useFillerAudio() {
   }, [startTransferAudio]);
 
   const playTransfer = useCallback((maxDurationMs?: number) => {
+    if (!enabledRef.current) return;
     if (assistantAudioActiveRef.current) {
       pendingModeRef.current = "transfer";
       pendingTransferDurationMsRef.current = maxDurationMs;

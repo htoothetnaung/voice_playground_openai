@@ -24,13 +24,6 @@ function App() {
     searchParams.get("architecture") || "cascaded_pipeline";
   const { addTranscriptMessage, addTranscriptBreadcrumb } = useTranscript();
   const { logClientEvent } = useEvent();
-  const {
-    playTransfer,
-    stopToolWait,
-    stopAll,
-    setAssistantAudioActive,
-  } = useFillerAudio();
-
   const [selectedAgentName, setSelectedAgentName] = useState<string>("");
   const [selectedAgentConfigSet, setSelectedAgentConfigSet] = useState<
     AgentOption[] | null
@@ -49,6 +42,19 @@ function App() {
       return stored ? stored === "true" : true;
     }
   );
+  const [areFillerSoundsEnabled, setAreFillerSoundsEnabled] = useState<boolean>(
+    () => {
+      if (typeof window === "undefined") return true;
+      const stored = localStorage.getItem("fillerSoundsEnabled");
+      return stored ? stored === "true" : true;
+    }
+  );
+  const {
+    playTransfer,
+    stopToolWait,
+    stopAll,
+    setAssistantAudioActive,
+  } = useFillerAudio(areFillerSoundsEnabled);
   const handoffTriggeredRef = useRef(false);
 
   const { connect, disconnect, sendUserText, sendEvent, interrupt, mute } =
@@ -309,6 +315,12 @@ function App() {
     if (storedAudioPlaybackEnabled) {
       setIsAudioPlaybackEnabled(storedAudioPlaybackEnabled === "true");
     }
+    const storedFillerSoundsEnabled = localStorage.getItem(
+      "fillerSoundsEnabled"
+    );
+    if (storedFillerSoundsEnabled) {
+      setAreFillerSoundsEnabled(storedFillerSoundsEnabled === "true");
+    }
   }, []);
 
   useEffect(() => {
@@ -325,6 +337,13 @@ function App() {
       isAudioPlaybackEnabled.toString()
     );
   }, [isAudioPlaybackEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "fillerSoundsEnabled",
+      areFillerSoundsEnabled.toString()
+    );
+  }, [areFillerSoundsEnabled]);
 
   useEffect(() => {
     if (sessionStatus === "DISCONNECTED") {
@@ -494,6 +513,8 @@ function App() {
         setIsEventsPaneExpanded={setIsEventsPaneExpanded}
         isAudioPlaybackEnabled={isAudioPlaybackEnabled}
         setIsAudioPlaybackEnabled={setIsAudioPlaybackEnabled}
+        areFillerSoundsEnabled={areFillerSoundsEnabled}
+        setAreFillerSoundsEnabled={setAreFillerSoundsEnabled}
         codec={urlCodec}
         onCodecChange={handleCodecChange}
       />

@@ -14,6 +14,8 @@ interface BottomToolbarProps {
   setIsEventsPaneExpanded: (val: boolean) => void;
   isAudioPlaybackEnabled: boolean;
   setIsAudioPlaybackEnabled: (val: boolean) => void;
+  areFillerSoundsEnabled: boolean;
+  setAreFillerSoundsEnabled: (val: boolean) => void;
   codec: string;
   onCodecChange: (newCodec: string) => void;
 }
@@ -30,6 +32,8 @@ function BottomToolbar({
   setIsEventsPaneExpanded,
   isAudioPlaybackEnabled,
   setIsAudioPlaybackEnabled,
+  areFillerSoundsEnabled,
+  setAreFillerSoundsEnabled,
   codec,
   onCodecChange,
 }: BottomToolbarProps) {
@@ -109,6 +113,17 @@ function BottomToolbar({
             className="h-4 w-4"
           />
           Audio playback
+        </label>
+
+        <label className="flex cursor-pointer items-center gap-2 rounded-full bg-white px-4 py-2 text-sm text-slate-700 shadow-sm">
+          <input
+            id="filler-sounds"
+            type="checkbox"
+            checked={areFillerSoundsEnabled}
+            onChange={(e) => setAreFillerSoundsEnabled(e.target.checked)}
+            className="h-4 w-4"
+          />
+          Filler sounds
         </label>
 
         <label className="flex cursor-pointer items-center gap-2 rounded-full bg-white px-4 py-2 text-sm text-slate-700 shadow-sm">

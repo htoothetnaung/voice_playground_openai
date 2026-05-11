@@ -175,6 +175,7 @@ class CallCenterCascadedRuntime:
             sample_rate=self.settings.cascaded_input_sample_rate,
             endpointing_ms=self.settings.deepgram_endpointing_ms,
             utterance_end_ms=self.settings.deepgram_utterance_end_ms,
+            open_timeout_seconds=self.settings.cascaded_provider_timeout_seconds,
         )
 
     def _build_tts_adapter(self) -> ElevenLabsTTSAdapter | None:

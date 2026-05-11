@@ -97,6 +97,7 @@ class DeepgramStreamingTranscriber:
         sample_rate: int,
         endpointing_ms: int,
         utterance_end_ms: int,
+        open_timeout_seconds: float = 30.0,
     ) -> None:
         """Initialize this object with the dependencies it needs for the surrounding backend workflow."""
         self.api_key = api_key
@@ -104,6 +105,7 @@ class DeepgramStreamingTranscriber:
         self.sample_rate = sample_rate
         self.endpointing_ms = endpointing_ms
         self.utterance_end_ms = utterance_end_ms
+        self.open_timeout_seconds = open_timeout_seconds
         self.aggregator = DeepgramTranscriptAggregator(model)
         self.events: asyncio.Queue[TranscriptEvent] = asyncio.Queue()
         self._socket: Any | None = None
@@ -111,6 +113,7 @@ class DeepgramStreamingTranscriber:
         self._keepalive_task: asyncio.Task[None] | None = None
         self._send_lock = asyncio.Lock()
         self._closed = False
+        self._next_reconnect_at = 0.0
 
     async def start(self) -> None:
         """Open the Deepgram WebSocket and launch receive and keepalive tasks."""
@@ -126,6 +129,7 @@ class DeepgramStreamingTranscriber:
             additional_headers={"Authorization": f"Token {self.api_key}"},
             ping_interval=20,
             ping_timeout=20,
+            open_timeout=self.open_timeout_seconds,
         )
         self._receiver_task = asyncio.create_task(self._receive_loop())
         self._keepalive_task = asyncio.create_task(self._keepalive_loop())
@@ -137,18 +141,31 @@ class DeepgramStreamingTranscriber:
 
         async with self._send_lock:
             if self._socket is None:
-                await self._restart_socket()
+                if not self._can_attempt_reconnect():
+                    return
+                try:
+                    await self._restart_socket()
+                except _transient_connection_errors():
+                    self._mark_reconnect_backoff()
+                    return
 
             try:
                 if self._socket is not None:
                     await self._socket.send(audio)
-            except _connection_closed_errors():
-                await self._restart_socket()
+            except _transient_connection_errors():
+                if not self._can_attempt_reconnect():
+                    return
+                try:
+                    await self._restart_socket()
+                except _transient_connection_errors():
+                    self._mark_reconnect_backoff()
+                    return
                 try:
                     if self._socket is not None:
                         await self._socket.send(audio)
-                except _connection_closed_errors():
+                except _transient_connection_errors():
                     self._socket = None
+                    self._mark_reconnect_backoff()
 
     async def flush_audio(self, duration_ms: int = 900) -> None:
         """Send a short block of silence to encourage Deepgram endpointing when the client commits audio."""
@@ -188,6 +205,17 @@ class DeepgramStreamingTranscriber:
         self.aggregator = DeepgramTranscriptAggregator(self.model)
         await self._open_socket()
 
+    def _can_attempt_reconnect(self) -> bool:
+        """Throttle reconnect attempts while the client keeps streaming microphone frames."""
+        loop = asyncio.get_running_loop()
+        return loop.time() >= self._next_reconnect_at
+
+    def _mark_reconnect_backoff(self) -> None:
+        """Avoid retrying a failed opening handshake for every incoming audio frame."""
+        loop = asyncio.get_running_loop()
+        self._next_reconnect_at = loop.time() + 3
+        self._socket = None
+
     def _url(self) -> str:
         """Build the Deepgram streaming URL with model-specific query parameters."""
         is_flux = self.model.startswith("flux")
@@ -223,7 +251,7 @@ class DeepgramStreamingTranscriber:
                     continue
                 for event in self.aggregator.ingest(message):
                     await self.events.put(event)
-        except _connection_closed_errors():
+        except _transient_connection_errors():
             if not self._closed:
                 self._socket = None
 
@@ -234,7 +262,7 @@ class DeepgramStreamingTranscriber:
             try:
                 if self._socket is not None:
                     await self._socket.send(json.dumps({"type": "KeepAlive"}))
-            except _connection_closed_errors():
+            except _transient_connection_errors():
                 if not self._closed:
                     self._socket = None
                 return
@@ -249,8 +277,13 @@ def _extract_transcript(message: dict[str, Any]) -> str:
     return str(alternatives[0].get("transcript") or "")
 
 
-def _connection_closed_errors() -> tuple[type[BaseException], ...]:
-    """Return the installed websockets close exception classes."""
+def _transient_connection_errors() -> tuple[type[BaseException], ...]:
+    """Return transient Deepgram WebSocket errors that should not tear down the app session."""
     import websockets
 
-    return (websockets.exceptions.ConnectionClosed,)
+    return (
+        TimeoutError,
+        OSError,
+        websockets.exceptions.ConnectionClosed,
+        websockets.exceptions.InvalidHandshake,
+    )
