@@ -1,8 +1,26 @@
 """Implements account lookup, verification, billing, technical support, retention, supervisor, and case-management tool behavior over mock data."""
+from datetime import datetime
+import re
+
 from agents import RunContextWrapper, function_tool
 
 from app.agents.callcenter.context import CallCenterContext
 from app.agents.callcenter.data_repository import CallCenterDataRepository
+
+_DATE_FORMATS = (
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%m/%d/%Y",
+    "%m-%d-%Y",
+    "%d/%m/%Y",
+    "%d-%m-%Y",
+    "%d %B %Y",
+    "%d %b %Y",
+    "%B %d %Y",
+    "%b %d %Y",
+    "%B %d, %Y",
+    "%b %d, %Y",
+)
 
 
 def create_case_id(prefix: str) -> str:
@@ -32,6 +50,26 @@ def _is_verified(ctx: RunContextWrapper[CallCenterContext]) -> bool:
     return bool(ctx.context.verified)
 
 
+def _digits_only(value: str) -> str:
+    """Normalize identity fields that may be spoken or typed with separators."""
+    return re.sub(r"\D", "", value or "")
+
+
+def _normalize_date_of_birth(value: str) -> str:
+    """Normalize common typed or spoken DOB formats to the mock record's ISO date."""
+    normalized = re.sub(r"[,]+", " ", value or "").strip()
+    normalized = re.sub(r"\s+", " ", normalized)
+    if not normalized:
+        return ""
+
+    for date_format in _DATE_FORMATS:
+        try:
+            return datetime.strptime(normalized, date_format).date().isoformat()
+        except ValueError:
+            continue
+    return normalized.lower()
+
+
 @function_tool
 async def lookup_customer_profile(
     ctx: RunContextWrapper[CallCenterContext],
@@ -39,7 +77,9 @@ async def lookup_customer_profile(
 ) -> dict:
     """Look up the Atenxion customer profile by phone number."""
     customer_profile = await _repository().customer_profile()
-    matched = phone_number == customer_profile["phone_number"]
+    matched = _digits_only(phone_number) == _digits_only(
+        customer_profile["phone_number"]
+    )
     if matched:
         ctx.context.active_account_id = customer_profile["account_id"]
         return {
@@ -74,9 +114,11 @@ async def verify_caller(
     """Verify the caller using phone number, date of birth, and 4-digit PIN."""
     customer_profile = await _repository().customer_profile()
     verified = (
-        phone_number == customer_profile["phone_number"]
-        and date_of_birth == customer_profile["date_of_birth"]
-        and pin_last4 == customer_profile["pin_last4"]
+        _digits_only(phone_number)
+        == _digits_only(customer_profile["phone_number"])
+        and _normalize_date_of_birth(date_of_birth)
+        == _normalize_date_of_birth(customer_profile["date_of_birth"])
+        and _digits_only(pin_last4) == _digits_only(customer_profile["pin_last4"])
     )
     ctx.context.verified = verified
     if verified:

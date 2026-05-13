@@ -119,6 +119,7 @@ class SessionAuditLogger:
         if event_type == "audio":
             return None
         document = {
+            "event_id": f"EVT-{uuid4().hex}",
             "session_id": session_id,
             "direction": direction,
             "event_name": event_type,

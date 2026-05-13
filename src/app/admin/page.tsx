@@ -42,6 +42,7 @@ type AdminTranscript = {
 };
 
 type AdminEvent = {
+  event_id?: string;
   event_name: string;
   direction?: string;
   created_at?: string;
@@ -440,6 +441,8 @@ function DetailTranscript({ transcripts }: { transcripts: AdminTranscript[] }) {
 }
 
 function DetailEvents({ events }: { events: AdminEvent[] }) {
+  const recentEvents = events.slice(-25);
+
   return (
     <div>
       <SectionHeader label="Logs" count={events.length} />
@@ -447,9 +450,9 @@ function DetailEvents({ events }: { events: AdminEvent[] }) {
         <EmptyDetail>No runtime logs found.</EmptyDetail>
       ) : (
         <div className="space-y-2">
-          {events.slice(-25).map((event, index) => (
+          {recentEvents.map((event, index) => (
             <details
-              key={`${event.event_name}-${event.created_at ?? index}`}
+              key={event.event_id ?? `${event.event_name}-${event.created_at ?? "undated"}-${index}`}
               className="rounded-lg border border-[#ebe5db] bg-[#fbfaf7] px-3 py-2 text-sm"
             >
               <summary className="cursor-pointer font-mono text-xs text-[#1d5960]">

@@ -160,6 +160,7 @@ export function useBackendRealtimeSession(
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const inputSilenceGainRef = useRef<GainNode | null>(null);
   const hasBufferedAudioRef = useRef(false);
+  const micFramesSentRef = useRef(0);
   const callbacksRef = useRef<BackendRealtimeSessionCallbacks>(callbacks);
 
   useEffect(() => {
@@ -356,11 +357,24 @@ export function useBackendRealtimeSession(
             _breadcrumbType: "session",
           });
           break;
+        case "stt_stream_ready":
+          addTranscriptBreadcrumb("Deepgram STT stream ready", {
+            sttModel: event.stt_model,
+            _breadcrumbType: "session",
+          });
+          break;
         case "stt_final":
           addTranscriptBreadcrumb("STT final transcript", {
             text: event.text,
             isFinal: event.is_final,
             speechFinal: event.speech_final,
+            _breadcrumbType: "session",
+          });
+          break;
+        case "stt_audio_received":
+          addTranscriptBreadcrumb("Microphone audio reached STT", {
+            bytes: event.bytes,
+            sttModel: event.stt_model,
             _breadcrumbType: "session",
           });
           break;
@@ -430,6 +444,14 @@ export function useBackendRealtimeSession(
             agentName: event.agent_name,
             _breadcrumbType: "audio",
           });
+          break;
+        case "tts_error":
+          addTranscriptBreadcrumb(`TTS audio skipped: ${event.agent_name}`, {
+            agentName: event.agent_name,
+            error: event.error,
+            _breadcrumbType: "audio",
+          });
+          callbacksRef.current.onAssistantSpeechEnd?.();
           break;
         case "tool_start":
           addTranscriptBreadcrumb(`function call: ${event.tool_name}`, {
@@ -525,6 +547,7 @@ export function useBackendRealtimeSession(
       const pcmBuffer = float32ToInt16Bytes(resampledInput);
       if (pcmBuffer.byteLength === 0) return;
       hasBufferedAudioRef.current = true;
+      micFramesSentRef.current += 1;
       ws.send(pcmBuffer);
     };
 
@@ -539,6 +562,12 @@ export function useBackendRealtimeSession(
     sourceNodeRef.current = sourceNode;
     processorNodeRef.current = processorNode;
     inputSilenceGainRef.current = inputSilenceGain;
+  }, []);
+
+  const resumeInputAudioContext = useCallback(() => {
+    const audioContext = inputAudioContextRef.current;
+    if (!audioContext || audioContext.state !== "suspended") return;
+    audioContext.resume().catch(() => undefined);
   }, []);
 
   const cleanupMicrophonePipeline = useCallback(async () => {
@@ -564,7 +593,9 @@ export function useBackendRealtimeSession(
 
       updateStatus("CONNECTING");
       hasBufferedAudioRef.current = false;
+      micFramesSentRef.current = 0;
       await ensureMicrophonePipeline();
+      resumeInputAudioContext();
 
       const firstAgent = agentName ?? "callcenteragent";
       const params = new URLSearchParams({ agent_name: firstAgent });
@@ -578,6 +609,7 @@ export function useBackendRealtimeSession(
 
       ws.onopen = () => {
         updateStatus("CONNECTED");
+        resumeInputAudioContext();
       };
 
       ws.onmessage = (message) => {
@@ -604,6 +636,7 @@ export function useBackendRealtimeSession(
       addTranscriptBreadcrumb,
       ensureMicrophonePipeline,
       handleServerEvent,
+      resumeInputAudioContext,
       stopPlayback,
       updateStatus,
     ],
@@ -653,6 +686,8 @@ export function useBackendRealtimeSession(
     if (event?.type === "input_audio_buffer.clear") {
       pttSpeakingRef.current = true;
       hasBufferedAudioRef.current = false;
+      micFramesSentRef.current = 0;
+      resumeInputAudioContext();
       return;
     }
 
@@ -673,13 +708,24 @@ export function useBackendRealtimeSession(
       }
       return;
     }
-  }, []);
+  }, [addTranscriptBreadcrumb, resumeInputAudioContext]);
 
   const interrupt = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    resumeInputAudioContext();
     stopPlayback();
     wsRef.current.send(JSON.stringify({ type: "interrupt" }));
-  }, [stopPlayback]);
+  }, [resumeInputAudioContext, stopPlayback]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.addEventListener("pointerdown", resumeInputAudioContext);
+    window.addEventListener("keydown", resumeInputAudioContext);
+    return () => {
+      window.removeEventListener("pointerdown", resumeInputAudioContext);
+      window.removeEventListener("keydown", resumeInputAudioContext);
+    };
+  }, [resumeInputAudioContext]);
 
   const mute = useCallback((muted: boolean) => {
     playbackEnabledRef.current = !muted;

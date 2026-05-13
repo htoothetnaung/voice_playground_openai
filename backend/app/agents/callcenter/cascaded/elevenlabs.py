@@ -49,7 +49,13 @@ class ElevenLabsTTSAdapter:
             },
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+        timeout = httpx.Timeout(
+            connect=self.timeout_seconds,
+            read=max(self.timeout_seconds, 60.0),
+            write=self.timeout_seconds,
+            pool=self.timeout_seconds,
+        )
+        async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
                 "POST",
                 url,

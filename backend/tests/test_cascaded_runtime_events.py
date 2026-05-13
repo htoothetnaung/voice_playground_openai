@@ -10,6 +10,7 @@ from app.agents.callcenter.cascaded.runtime import (
     _handoff_outro,
     _should_skip_agent_sentence,
     _should_skip_handoff_sentence,
+    _should_skip_pre_handoff_sentence,
 )
 from app.agents.callcenter.context import CallCenterContext
 from app.core.config import Settings
@@ -85,15 +86,15 @@ def test_cascaded_handoff_intro_uses_named_agents() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     assert (
         _handoff_intro("callcenteragent", "billingAgent")
-        == "Hi, this is Austin with billing. Alice asked me to step in and help."
+        == "Hi, this is Austin with billing. I can help from here."
     )
 
 
-def test_cascaded_handoff_outro_names_destination_team() -> None:
+def test_cascaded_handoff_outro_uses_natural_destination_line() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     assert (
         _handoff_outro("callcenteragent", "technicalSupportAgent")
-        == "I'm sorry for the trouble. I'll transfer you to our technical support team so they can handle this."
+        == "I'll get our technical support team on the line now."
     )
 
 
@@ -101,7 +102,7 @@ def test_cascaded_handoff_intro_for_supervisor_focuses_on_help_not_context() -> 
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     intro = _handoff_intro("technicalSupportAgent", "supervisorAgent")
 
-    assert intro == "Hi, this is Sarah, the floor supervisor. Bob asked me to step in and help sort this out."
+    assert intro == "Hi, Sarah here from the floor supervisor desk. Let's sort this out."
     assert "context" not in intro.lower()
 
 
@@ -109,7 +110,30 @@ def test_cascaded_handoff_outro_warns_before_returning_to_front_desk() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     assert (
         _handoff_outro("technicalSupportAgent", "callcenteragent")
-        == "I'll bring Alice from our front desk back in now."
+        == "Let me bring Alice at the front desk back in."
+    )
+
+
+def test_cascaded_handoff_lines_vary_by_destination() -> None:
+    """Verify handoff wording stays concise and varied across destination teams."""
+    lines = {
+        _handoff_outro("callcenteragent", "billingAgent"),
+        _handoff_outro("callcenteragent", "technicalSupportAgent"),
+        _handoff_outro("callcenteragent", "retentionAgent"),
+        _handoff_outro("technicalSupportAgent", "supervisorAgent"),
+        _handoff_outro("billingAgent", "humanEscalationAgent"),
+    }
+
+    assert len(lines) == 5
+    assert all(len(line) <= 75 for line in lines)
+    assert not any("I'm sorry for the trouble" in line for line in lines)
+
+
+def test_cascaded_handoff_intro_for_front_desk_uses_at_not_in() -> None:
+    """Verify returning to front desk sounds natural."""
+    assert (
+        _handoff_intro("technicalSupportAgent", "callcenteragent")
+        == "This is Alice at the front desk. I'll take it from here."
     )
 
 
@@ -212,6 +236,22 @@ def test_direct_handoff_only_runs_from_triage_agent() -> None:
     assert _direct_handoff_agent_name("Why is my bill so high?", "billingAgent") is None
 
 
+def test_direct_handoff_routes_cancellation_from_specialists_to_retention() -> None:
+    """Verify cancellation requests can move from another specialist to retention."""
+    assert (
+        _direct_handoff_agent_name("Can I cancel?", "technicalSupportAgent", is_verified=True)
+        == "retentionAgent"
+    )
+    assert (
+        _direct_handoff_agent_name(
+            "No, why can't you transfer me to retention agent?",
+            "technicalSupportAgent",
+            is_verified=True,
+        )
+        == "retentionAgent"
+    )
+
+
 def test_direct_handoff_does_not_route_human_requests_to_simulated_agent() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     assert _direct_handoff_agent_name("I want a human representative", "callcenteragent") is None
@@ -247,9 +287,33 @@ def test_handoff_sentence_filter_removes_duplicate_transfer_narration() -> None:
         "They have your account and service details ready. Thank you for your patience.",
         "technicalSupportAgent",
     )
+    assert _should_skip_handoff_sentence(
+        "Hi, this is Austin with billing. Alice asked me to step in and help.",
+        "billingAgent",
+    )
     assert not _should_skip_handoff_sentence(
         "Could you please provide the zip code for your service address?",
         "technicalSupportAgent",
+    )
+
+
+def test_pre_handoff_filter_removes_long_account_summary() -> None:
+    """Verify verbose triage summaries do not delay the transfer cue."""
+    assert _should_skip_pre_handoff_sentence(
+        (
+            "I have verified your account and see you have three active services: "
+            "5G mobile on the Unlimited Plus plan, tablet data on a 10GB plan, "
+            "and home internet at 1 Gig speed."
+        ),
+        "billingAgent",
+    )
+    assert _should_skip_pre_handoff_sentence(
+        "The next agent will review your account details and handle the billing issue.",
+        "billingAgent",
+    )
+    assert not _should_skip_pre_handoff_sentence(
+        "I can help with that.",
+        "billingAgent",
     )
 
 

@@ -15,9 +15,9 @@ function Events({ isExpanded }: EventsProps) {
   const { loggedEvents, toggleExpand } = useEvent();
 
   const getDirectionArrow = (direction: string) => {
-    if (direction === "client") return { symbol: "▲", color: "#7c3aed" };
-    if (direction === "server") return { symbol: "▼", color: "#059669" };
-    return { symbol: "•", color: "#555" };
+    if (direction === "client") return { symbol: "up", color: "#7c3aed" };
+    if (direction === "server") return { symbol: "down", color: "#059669" };
+    return { symbol: "dot", color: "#555" };
   };
 
   useEffect(() => {
@@ -34,14 +34,16 @@ function Events({ isExpanded }: EventsProps) {
   return (
     <div
       className={
-        (isExpanded ? "w-[38%] overflow-auto opacity-100" : "w-0 overflow-hidden opacity-0") +
+        (isExpanded
+          ? "max-h-64 w-full overflow-auto opacity-100 lg:max-h-none lg:w-[38%]"
+          : "max-h-0 w-full overflow-hidden opacity-0 lg:w-0") +
         " flex-col rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-200 ease-in-out"
       }
       ref={eventLogsContainerRef}
     >
       {isExpanded && (
         <div>
-          <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-2xl border-b border-slate-200 bg-white px-6 py-4 text-base">
+          <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-2xl border-b border-slate-200 bg-white px-4 py-3 text-base sm:px-6 sm:py-4">
             <div className="flex flex-col">
               <span className="font-semibold text-slate-900">Logs</span>
               <span className="text-xs text-slate-500">
@@ -59,19 +61,19 @@ function Events({ isExpanded }: EventsProps) {
               return (
                 <div
                   key={`${log.id}-${idx}`}
-                  className="border-t border-slate-200 px-6 py-3 font-mono"
+                  className="border-t border-slate-200 px-4 py-3 font-mono sm:px-6"
                 >
                   <div
                     onClick={() => toggleExpand(log.id)}
                     className="flex cursor-pointer items-center justify-between gap-3"
                   >
-                    <div className="flex flex-1 items-center gap-2">
-                      <span style={{ color: arrowInfo.color }} className="text-xs">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <span style={{ color: arrowInfo.color }} className="w-8 flex-shrink-0 text-xs uppercase">
                         {arrowInfo.symbol}
                       </span>
                       <span
                         className={
-                          "flex-1 text-sm " +
+                          "min-w-0 flex-1 truncate text-sm " +
                           (isError ? "text-rose-600" : "text-slate-800")
                         }
                       >

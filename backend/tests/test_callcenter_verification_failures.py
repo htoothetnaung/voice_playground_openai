@@ -51,6 +51,37 @@ async def test_failed_verification_tells_agent_not_to_escalate() -> None:
 
 
 @pytest.mark.asyncio
+async def test_verification_accepts_equivalent_identity_formats() -> None:
+    """Verify spoken or typed identity formats can still match the canonical mock record."""
+    result = await verify_caller.on_invoke_tool(
+        FakeToolContext("verify_caller"),
+        json.dumps(
+            {
+                "phone_number": "09661200650",
+                "date_of_birth": "29 May 2004",
+                "pin_last4": "PIN: 1234",
+            }
+        ),
+    )
+
+    assert result["verified"] is True
+    assert result["security_status"] == "passed"
+    assert result["account_id"] == "ATX-204871"
+
+
+@pytest.mark.asyncio
+async def test_lookup_customer_profile_accepts_formatted_phone_number() -> None:
+    """Verify phone lookup ignores user-facing separators without changing account matching."""
+    result = await lookup_customer_profile.on_invoke_tool(
+        FakeToolContext("lookup_customer_profile"),
+        json.dumps({"phone_number": "096 612 00650"}),
+    )
+
+    assert result["found"] is True
+    assert result["profile"]["account_id"] == "ATX-204871"
+
+
+@pytest.mark.asyncio
 async def test_account_specific_tools_require_verification() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     result = await get_latest_bill.on_invoke_tool(

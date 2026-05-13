@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,6 +31,7 @@ HANDOFF_TRANSFER_DELAY_SECONDS = 2.5
 MAX_AGENT_TURNS = 30
 PCM_BYTES_PER_SAMPLE = 2
 MIN_TTS_AUDIO_FRAME_MS = 40
+logger = logging.getLogger(__name__)
 
 AGENT_DISPLAY_DETAILS = {
     "callcenteragent": ("Alice", "front desk"),
@@ -38,6 +40,47 @@ AGENT_DISPLAY_DETAILS = {
     "retentionAgent": ("Maya", "retention"),
     "supervisorAgent": ("Sarah", "floor supervisor"),
     "humanEscalationAgent": ("Jordan", "escalation desk"),
+}
+
+HANDOFF_OUTRO_TEMPLATES = {
+    "callcenteragent": (
+        "I'll bring {to_display_name} from our front desk back in now.",
+        "Let me bring {to_display_name} at the front desk back in.",
+        "I'll route you back to {to_display_name} at the front desk.",
+    ),
+    "supervisorAgent": (
+        "Hang tight while I bring in our floor supervisor.",
+        "I'll bring our floor supervisor in now to help with this.",
+        "Let me get our floor supervisor on the line.",
+    ),
+    "humanEscalationAgent": (
+        "I'll connect you with {to_display_name} at our escalation desk now.",
+        "Hang tight while I bring {to_display_name} from escalation in.",
+        "Let me get {to_display_name} at our escalation desk on the line.",
+    ),
+    "default": (
+        "Hang tight while I bring in our {to_team} team.",
+        "I'll get our {to_team} team on the line now.",
+        "Let me bring in someone from {to_team} to take it from here.",
+    ),
+}
+
+HANDOFF_INTRO_TEMPLATES = {
+    "callcenteragent": (
+        "Hi, this is {to_display_name} at the front desk. I can help from here.",
+        "This is {to_display_name} at the front desk. I'll take it from here.",
+        "Hi, {to_display_name} here at the front desk. Let me pick this back up.",
+    ),
+    "supervisorAgent": (
+        "Hi, this is {to_display_name}, the floor supervisor. I can help from here.",
+        "This is {to_display_name}, the floor supervisor. I'll take it from here.",
+        "Hi, {to_display_name} here from the floor supervisor desk. Let's sort this out.",
+    ),
+    "default": (
+        "Hi, this is {to_display_name} with {to_team}. I can help from here.",
+        "This is {to_display_name} in {to_team}. I'll take it from here.",
+        "Hi, {to_display_name} here from {to_team}. Let me take a look.",
+    ),
 }
 
 
@@ -61,6 +104,7 @@ class CallCenterCascadedRuntime:
         self.tts_adapter = tts_adapter
         self._active_stt_metrics: TurnMetrics | None = None
         self._response_task: asyncio.Task[None] | None = None
+        self._ptt_audio_buffer: bytearray | None = None
 
     async def serve(self, websocket: WebSocket, agent_name: str | None = None) -> None:
         """Own the lifetime of one WebSocket session, initialize provider or SDK state, and coordinate reader and writer tasks."""
@@ -92,14 +136,19 @@ class CallCenterCascadedRuntime:
             if transcriber is not None:
                 try:
                     await transcriber.start()
+                    await audited_websocket.send_json(
+                        {
+                            "type": "stt_stream_ready",
+                            "stt_model": self.settings.deepgram_stt_model,
+                        }
+                    )
                 except Exception as exc:
                     await audited_websocket.send_json(
                         {
                             "type": "error",
-                            "error": f"Deepgram STT connection failed: {exc}",
+                            "error": f"Deepgram live STT connection failed; push-to-talk transcription will still retry: {exc}",
                         }
                     )
-                    transcriber = None
             if transcriber is None:
                 await audited_websocket.send_json(
                     {
@@ -208,7 +257,20 @@ class CallCenterCascadedRuntime:
             if message.get("bytes") is not None:
                 if self._active_stt_metrics is None:
                     self._active_stt_metrics = self._new_metrics()
+                first_audio_chunk = self._active_stt_metrics.user_audio_bytes == 0
                 self._active_stt_metrics.user_audio_bytes += len(message["bytes"])
+                if self._ptt_audio_buffer is not None:
+                    self._ptt_audio_buffer.extend(message["bytes"])
+                if first_audio_chunk:
+                    await websocket.send_json(
+                        {
+                            "type": "stt_audio_received",
+                            "bytes": len(message["bytes"]),
+                            "stt_model": self.settings.deepgram_stt_model,
+                        }
+                    )
+                if self._ptt_audio_buffer is not None:
+                    continue
                 if transcriber is not None:
                     try:
                         await transcriber.send_audio(message["bytes"])
@@ -247,10 +309,74 @@ class CallCenterCascadedRuntime:
                     payload.get("event") if isinstance(payload.get("event"), dict) else payload,
                     direction="client",
                 )
+                client_payload = payload.get("event", {}).get("payload")
+                if isinstance(client_payload, dict) and client_payload.get("type") == "input_audio_buffer.clear":
+                    self._ptt_audio_buffer = bytearray()
             elif message_type == "audio_commit" and transcriber is not None:
-                await transcriber.flush_audio()
+                if self._ptt_audio_buffer is not None:
+                    await self._commit_ptt_audio(
+                        websocket,
+                        transcriber,
+                        starting_agent,
+                        context,
+                        session,
+                        tts_adapter,
+                    )
+                else:
+                    await transcriber.flush_audio()
             elif message_type == "ping":
                 await websocket.send_json({"type": "pong"})
+
+    async def _commit_ptt_audio(
+        self,
+        websocket: WebSocket,
+        transcriber: DeepgramStreamingTranscriber,
+        starting_agent: Any,
+        context: CallCenterContext,
+        session: SQLiteSession,
+        tts_adapter: ElevenLabsTTSAdapter | None,
+    ) -> None:
+        """Transcribe one push-to-talk clip through Deepgram REST and start the agent turn."""
+        audio = bytes(self._ptt_audio_buffer or b"")
+        self._ptt_audio_buffer = None
+        metrics = self._active_stt_metrics or self._new_metrics()
+        self._active_stt_metrics = None
+        if not audio:
+            return
+
+        try:
+            text = await transcriber.transcribe_pcm(audio)
+        except Exception as exc:
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "error": f"Deepgram PTT transcription failed: {exc}",
+                }
+            )
+            return
+
+        await websocket.send_json(
+            {
+                "type": "stt_final",
+                "text": text,
+                "is_final": True,
+                "speech_final": True,
+            }
+        )
+        if not text:
+            return
+
+        metrics.turn_detected_ms = metrics.mark_ms()
+        await websocket.send_json({"type": "turn_detected", "text": text})
+        await self._start_agent_turn(
+            websocket,
+            text=text,
+            starting_agent=starting_agent,
+            context=context,
+            session=session,
+            tts_adapter=tts_adapter,
+            metrics=metrics,
+        )
 
     async def _consume_transcripts(
         self,
@@ -424,9 +550,8 @@ class CallCenterCascadedRuntime:
                             previous_agent_name = active_agent_name
                             display_name, team = _agent_display_details(new_agent_name)
                             pre_handoff_remaining = sentence_buffer.flush()
-                            if pre_handoff_remaining and not _should_skip_agent_sentence(
+                            if pre_handoff_remaining and not _should_skip_pre_handoff_sentence(
                                 pre_handoff_remaining,
-                                previous_agent_name,
                                 new_agent_name,
                             ):
                                 if metrics.first_sentence_ms is None:
@@ -491,8 +616,14 @@ class CallCenterCascadedRuntime:
             await websocket.send_json({"type": "audio_interrupted"})
             raise
         except Exception as exc:
+            logger.exception("Cascaded voice turn failed")
             tts_worker.cancel()
-            await websocket.send_json({"type": "error", "error": f"cascaded_turn_failed: {exc}"})
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "error": f"cascaded_turn_failed: {_format_exception(exc)}",
+                }
+            )
 
     async def _tts_worker(
         self,
@@ -556,17 +687,28 @@ class CallCenterCascadedRuntime:
                 * MIN_TTS_AUDIO_FRAME_MS
                 / 1000
             )
-            async for chunk in tts_adapter.synthesize_stream(sentence, voice_id=voice_id):
-                if metrics.tts_first_audio_ms is None:
-                    metrics.tts_first_audio_ms = metrics.mark_ms()
-                pending_audio += chunk
-                emit_length = len(pending_audio) - (len(pending_audio) % PCM_BYTES_PER_SAMPLE)
-                if emit_length < min_frame_bytes:
-                    continue
-                audio_bytes = pending_audio[:emit_length]
-                pending_audio = pending_audio[emit_length:]
-                metrics.output_audio_bytes += len(audio_bytes)
-                await websocket.send_json(audio_event(assistant_item_id, 0, audio_bytes, agent_name=agent_name))
+            try:
+                async for chunk in tts_adapter.synthesize_stream(sentence, voice_id=voice_id):
+                    if metrics.tts_first_audio_ms is None:
+                        metrics.tts_first_audio_ms = metrics.mark_ms()
+                    pending_audio += chunk
+                    emit_length = len(pending_audio) - (len(pending_audio) % PCM_BYTES_PER_SAMPLE)
+                    if emit_length < min_frame_bytes:
+                        continue
+                    audio_bytes = pending_audio[:emit_length]
+                    pending_audio = pending_audio[emit_length:]
+                    metrics.output_audio_bytes += len(audio_bytes)
+                    await websocket.send_json(audio_event(assistant_item_id, 0, audio_bytes, agent_name=agent_name))
+            except Exception as exc:
+                logger.warning("TTS sentence synthesis failed: %s", _format_exception(exc), exc_info=True)
+                await websocket.send_json(
+                    {
+                        "type": "tts_error",
+                        "agent_name": agent_name,
+                        "error": _format_exception(exc),
+                    }
+                )
+                continue
 
             if len(pending_audio) >= PCM_BYTES_PER_SAMPLE:
                 emit_length = len(pending_audio) - (len(pending_audio) % PCM_BYTES_PER_SAMPLE)
@@ -623,36 +765,47 @@ def _loads(text: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _format_exception(exc: BaseException) -> str:
+    """Return a useful exception string even for errors such as TimeoutError with empty messages."""
+    message = str(exc).strip()
+    if message:
+        return f"{type(exc).__name__}: {message}"
+    return repr(exc)
+
+
 def _agent_display_details(agent_name: str) -> tuple[str, str]:
     """Resolve internal agent names to the human display name and team label used in handoff audio."""
     return AGENT_DISPLAY_DETAILS.get(agent_name, (agent_name, "support"))
 
 
+def _handoff_template_index(from_agent_name: str, to_agent_name: str, template_count: int) -> int:
+    """Pick a stable phrase variant without relying on Python's randomized hash seed."""
+    if template_count <= 1:
+        return 0
+    key = f"{from_agent_name}->{to_agent_name}"
+    return sum(ord(character) for character in key) % template_count
+
+
 def _handoff_intro(from_agent_name: str, to_agent_name: str) -> str:
     """Generate the receiving agent introduction spoken after a handoff."""
-    from_display_name, _ = _agent_display_details(from_agent_name)
     to_display_name, to_team = _agent_display_details(to_agent_name)
-    if to_agent_name == "supervisorAgent":
-        return (
-            f"Hi, this is {to_display_name}, the floor supervisor. "
-            f"{from_display_name} asked me to step in and help sort this out."
-        )
-    return (
-        f"Hi, this is {to_display_name} with {to_team}. "
-        f"{from_display_name} asked me to step in and help."
+    templates = HANDOFF_INTRO_TEMPLATES.get(
+        to_agent_name,
+        HANDOFF_INTRO_TEMPLATES["default"],
     )
+    template = templates[_handoff_template_index(from_agent_name, to_agent_name, len(templates))]
+    return template.format(to_display_name=to_display_name, to_team=to_team)
 
 
 def _handoff_outro(from_agent_name: str, to_agent_name: str) -> str:
     """Generate the departing agent transfer line spoken before a handoff."""
     to_display_name, to_team = _agent_display_details(to_agent_name)
-    if to_agent_name == "callcenteragent":
-        return f"I'll bring {to_display_name} from our front desk back in now."
-    if to_agent_name == "supervisorAgent":
-        return "I'm sorry for the trouble. I'll bring in our floor supervisor to help with this."
-    if to_agent_name == "humanEscalationAgent":
-        return f"I'll connect you with {to_display_name} at our escalation desk now."
-    return f"I'm sorry for the trouble. I'll transfer you to our {to_team} team so they can handle this."
+    templates = HANDOFF_OUTRO_TEMPLATES.get(
+        to_agent_name,
+        HANDOFF_OUTRO_TEMPLATES["default"],
+    )
+    template = templates[_handoff_template_index(from_agent_name, to_agent_name, len(templates))]
+    return template.format(to_display_name=to_display_name, to_team=to_team)
 
 
 def _agent_voice_id(agent_name: str, settings: Settings) -> str:
@@ -691,9 +844,6 @@ def _direct_handoff_agent_name(
     if active_agent_name != "supervisorAgent" and any(term in normalized for term in supervisor_terms):
         return "supervisorAgent"
 
-    if active_agent_name != "callcenteragent":
-        return None
-
     billing_terms = (
         " bill ",
         " billing ",
@@ -723,13 +873,32 @@ def _direct_handoff_agent_name(
     retention_terms = (
         " cancel",
         " cancellation",
+        " cancel my",
+        " cancel service",
+        " cancel the service",
+        " cancel my service",
+        " cancel account",
+        " cancel my account",
+        " close account",
+        " close my account",
+        " terminate",
         " downgrade",
         " retention",
+        " retention agent",
+        " retention specialist",
+        " transfer me to retention",
+        " transfer to retention",
         " leave",
         " switch provider",
         " too expensive",
         " cheaper plan",
     )
+    if active_agent_name != "retentionAgent" and any(term in normalized for term in retention_terms):
+        return "retentionAgent"
+
+    if active_agent_name != "callcenteragent":
+        return None
+
     if any(term in normalized for term in retention_terms):
         return "retentionAgent"
     if any(term in normalized for term in billing_terms):
@@ -824,6 +993,60 @@ def _should_skip_agent_sentence(
     )
 
 
+def _should_skip_pre_handoff_sentence(sentence: str, pending_handoff_agent_name: str | None) -> bool:
+    """Suppress verbose setup text that would delay the backend-managed transfer cue."""
+    if not pending_handoff_agent_name:
+        return False
+    if _should_skip_handoff_sentence(sentence, pending_handoff_agent_name):
+        return True
+
+    normalized = " ".join(sentence.lower().strip().strip("()").split())
+    if not normalized:
+        return True
+
+    summary_markers = (
+        "i have verified your account",
+        "i've verified your account",
+        "i verified your account",
+        "i have confirmed your account",
+        "i can see you have",
+        "i see you have",
+        "you have three active services",
+        "you have active services",
+        "active services:",
+        "5g mobile",
+        "unlimited plus plan",
+        "tablet data",
+        "home internet",
+        "1 gig speed",
+        "the next agent",
+        "another agent",
+        "so they can handle",
+        "they can handle",
+        "they'll handle",
+        "who can handle",
+        "who will help",
+        "will review",
+        "can review",
+    )
+    if any(marker in normalized for marker in summary_markers):
+        return True
+
+    return len(normalized) > 180 and any(
+        marker in normalized
+        for marker in (
+            "account",
+            "service",
+            "plan",
+            "bill",
+            "billing",
+            "charges",
+            "transfer",
+            "team",
+        )
+    )
+
+
 def _should_skip_handoff_sentence(sentence: str, pending_handoff_agent_name: str | None) -> bool:
     """Suppress transfer/setup narration after the backend has already emitted handoff audio lines."""
     if not pending_handoff_agent_name:
@@ -849,6 +1072,9 @@ def _should_skip_handoff_sentence(sentence: str, pending_handoff_agent_name: str
         "transferring now",
         "active home internet service",
         "active services",
+        "account summary",
+        "account details",
+        "service summary",
         "service info ready",
         "details ready",
         "account and service details",
@@ -866,6 +1092,10 @@ def _should_skip_handoff_sentence(sentence: str, pending_handoff_agent_name: str
         "billing expert",
         "billing specialist",
         "technical support specialist",
+        "retention specialist",
+        "floor supervisor",
+        "step in and help",
+        "take over from here",
         "won't need to repeat",
         "will not need to repeat",
     )

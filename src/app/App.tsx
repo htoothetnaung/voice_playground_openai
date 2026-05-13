@@ -56,6 +56,7 @@ function App() {
     setAssistantAudioActive,
   } = useFillerAudio(areFillerSoundsEnabled);
   const handoffTriggeredRef = useRef(false);
+  const pttUserSpeakingRef = useRef(false);
 
   const { connect, disconnect, sendUserText, sendEvent, interrupt, mute } =
     useBackendRealtimeSession({
@@ -184,6 +185,7 @@ function App() {
     stopAll();
     disconnect();
     setSessionStatus("DISCONNECTED");
+    pttUserSpeakingRef.current = false;
     setIsPTTUserSpeaking(false);
   };
 
@@ -249,15 +251,18 @@ function App() {
 
   const handleTalkButtonDown = () => {
     if (sessionStatus !== "CONNECTED") return;
+    if (pttUserSpeakingRef.current) return;
     interrupt();
 
+    pttUserSpeakingRef.current = true;
     setIsPTTUserSpeaking(true);
     sendClientEvent({ type: "input_audio_buffer.clear" }, "clear PTT buffer");
   };
 
   const handleTalkButtonUp = () => {
-    if (sessionStatus !== "CONNECTED" || !isPTTUserSpeaking) return;
+    if (sessionStatus !== "CONNECTED" || !pttUserSpeakingRef.current) return;
 
+    pttUserSpeakingRef.current = false;
     setIsPTTUserSpeaking(false);
     sendClientEvent({ type: "input_audio_buffer.commit" }, "commit PTT");
     sendClientEvent({ type: "response.create" }, "trigger response PTT");
@@ -379,14 +384,14 @@ function App() {
   const agentSetKey = searchParams.get("agentConfig") || "default";
 
   return (
-    <div className="relative flex h-screen flex-col bg-slate-100 text-base text-slate-800">
-      <div className="border-b border-slate-200 bg-white/90 px-6 py-5 backdrop-blur">
-        <div className="flex items-center justify-between gap-4">
+    <div className="relative flex h-[100dvh] min-h-[100dvh] flex-col bg-slate-100 text-base text-slate-800">
+      <div className="border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur sm:px-6 lg:py-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div
-            className="flex cursor-pointer items-center gap-3"
+            className="flex min-w-0 cursor-pointer items-center gap-3"
             onClick={() => window.location.reload()}
           >
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-slate-100">
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-100">
               <Image
                 src="/atenxion_logo.png"
                 alt="Atenxion Logo"
@@ -394,78 +399,82 @@ function App() {
                 height={28}
               />
             </div>
-            <div className="flex flex-col">
-              <span className="text-lg font-semibold text-slate-900">
+            <div className="flex min-w-0 flex-col">
+              <span className="truncate text-lg font-semibold text-slate-900">
                 Atenxion Call Center Lab
               </span>
-              <span className="text-sm font-normal text-slate-500">
+              <span className="line-clamp-2 text-sm font-normal leading-5 text-slate-500 sm:line-clamp-1">
                 Realtime handoffs, tool calls, guardrails, and call-floor audio cues
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:flex xl:items-center xl:gap-4">
+            <div className="flex items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 sm:justify-start xl:py-1">
               Telecom support simulation
             </div>
-            <label className="mr-2 flex items-center gap-1 text-sm font-medium text-slate-600">
-              Architecture
-            </label>
-            <div className="relative inline-block">
-              <select
-                value={selectedArchitecture}
-                onChange={handleArchitectureChange}
-                className="appearance-none cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 pr-10 text-sm font-medium text-slate-700 shadow-sm focus:outline-none"
-              >
-                <option value="openai_native">OpenAI native realtime</option>
-                <option value="cascaded_pipeline">Deepgram + GPT + ElevenLabs</option>
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500">
-                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                  <path
-                    fillRule="evenodd"
-                    d="M5.23 7.21a.75.75 0 011.06.02L10 10.44l3.71-3.21a.75.75 0 111.04 1.08l-4.25 3.65a.75.75 0 01-1.04 0L5.21 8.27a.75.75 0 01.02-1.06z"
-                    clipRule="evenodd"
-                  />
-                </svg>
+            <div className="min-w-0">
+              <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">
+                Architecture
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedArchitecture}
+                  onChange={handleArchitectureChange}
+                  className="w-full appearance-none cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 pr-10 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
+                  <option value="openai_native">OpenAI native realtime</option>
+                  <option value="cascaded_pipeline">Deepgram + GPT + ElevenLabs</option>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500">
+                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path
+                      fillRule="evenodd"
+                      d="M5.23 7.21a.75.75 0 011.06.02L10 10.44l3.71-3.21a.75.75 0 111.04 1.08l-4.25 3.65a.75.75 0 01-1.04 0L5.21 8.27a.75.75 0 01.02-1.06z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
               </div>
             </div>
-            <label className="mr-2 flex items-center gap-1 text-sm font-medium text-slate-600">
-              Scenario
-            </label>
-            <div className="relative inline-block">
-              <select
-                value={agentSetKey}
-                onChange={handleAgentChange}
-                className="appearance-none cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 pr-10 text-sm font-medium text-slate-700 shadow-sm focus:outline-none"
-              >
-                {Object.keys(allAgentSets).map((agentKey) => (
-                  <option key={agentKey} value={agentKey}>
-                    {agentKey}
-                  </option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500">
-                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                  <path
-                    fillRule="evenodd"
-                    d="M5.23 7.21a.75.75 0 011.06.02L10 10.44l3.71-3.21a.75.75 0 111.04 1.08l-4.25 3.65a.75.75 0 01-1.04 0L5.21 8.27a.75.75 0 01.02-1.06z"
-                    clipRule="evenodd"
-                  />
-                </svg>
+            <div className="min-w-0">
+              <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">
+                Scenario
+              </label>
+              <div className="relative">
+                <select
+                  value={agentSetKey}
+                  onChange={handleAgentChange}
+                  className="w-full appearance-none cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 pr-10 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
+                  {Object.keys(allAgentSets).map((agentKey) => (
+                    <option key={agentKey} value={agentKey}>
+                      {agentKey}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500">
+                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path
+                      fillRule="evenodd"
+                      d="M5.23 7.21a.75.75 0 011.06.02L10 10.44l3.71-3.21a.75.75 0 111.04 1.08l-4.25 3.65a.75.75 0 01-1.04 0L5.21 8.27a.75.75 0 01.02-1.06z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
               </div>
             </div>
 
             {agentSetKey && (
-              <div className="flex items-center">
-                <label className="mr-2 flex items-center gap-1 text-sm font-medium text-slate-600">
+              <div className="min-w-0 sm:col-span-2 xl:col-span-1">
+                <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">
                   Agent
                 </label>
-                <div className="relative inline-block">
+                <div className="relative">
                   <select
                     value={selectedAgentName}
                     onChange={handleSelectedAgentChange}
-                    className="appearance-none cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 pr-10 text-sm font-medium text-slate-700 shadow-sm focus:outline-none"
+                    className="w-full appearance-none cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 pr-10 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
                   >
                     {selectedAgentConfigSet?.map((agent) => (
                       <option key={agent.name} value={agent.name}>
@@ -489,7 +498,7 @@ function App() {
         </div>
       </div>
 
-      <div className="relative flex flex-1 gap-3 overflow-hidden p-3">
+      <div className="relative flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3 lg:flex-row">
         <Transcript
           userText={userText}
           setUserText={setUserText}

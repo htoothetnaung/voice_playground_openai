@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlencode
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -124,6 +128,7 @@ class DeepgramStreamingTranscriber:
         """Open a Deepgram WebSocket and start background receive/keepalive tasks."""
         import websockets
 
+        logger.info("Opening Deepgram STT stream", extra={"model": self.model})
         self._socket = await websockets.connect(
             self._url(),
             additional_headers={"Authorization": f"Token {self.api_key}"},
@@ -172,6 +177,36 @@ class DeepgramStreamingTranscriber:
         bytes_per_ms = self.sample_rate * 2 / 1000
         await self.send_audio(bytes(round(bytes_per_ms * duration_ms)))
 
+    async def transcribe_pcm(self, audio: bytes) -> str:
+        """Transcribe a complete PCM16 clip through Deepgram's pre-recorded endpoint."""
+        import httpx
+
+        if not audio:
+            return ""
+
+        params = {
+            "model": self.model,
+            "smart_format": "true",
+        }
+        wav_audio = _pcm16_wav(audio, self.sample_rate)
+        async with httpx.AsyncClient(timeout=self.open_timeout_seconds) as client:
+            response = await client.post(
+                f"https://api.deepgram.com/v1/listen?{urlencode(params)}",
+                content=wav_audio,
+                headers={
+                    "Authorization": f"Token {self.api_key}",
+                    "Content-Type": "audio/wav",
+                },
+            )
+            response.raise_for_status()
+
+        payload = response.json()
+        channel = payload.get("results", {}).get("channels", [{}])[0]
+        alternatives = channel.get("alternatives") or []
+        if not alternatives:
+            return ""
+        return str(alternatives[0].get("transcript") or "").strip()
+
     async def close(self) -> None:
         """Cancel Deepgram background tasks and close the provider WebSocket."""
         self._closed = True
@@ -191,6 +226,7 @@ class DeepgramStreamingTranscriber:
         if self._closed:
             return
 
+        logger.info("Restarting Deepgram STT stream", extra={"model": self.model})
         for task in (self._receiver_task, self._keepalive_task):
             if task and not task.done():
                 task.cancel()
@@ -275,6 +311,35 @@ def _extract_transcript(message: dict[str, Any]) -> str:
     if not alternatives:
         return ""
     return str(alternatives[0].get("transcript") or "")
+
+
+def _pcm16_wav(audio: bytes, sample_rate: int) -> bytes:
+    """Wrap little-endian mono PCM16 bytes in a minimal WAV container."""
+    channels = 1
+    bits_per_sample = 16
+    block_align = channels * bits_per_sample // 8
+    byte_rate = sample_rate * block_align
+    data_size = len(audio)
+    riff_size = 36 + data_size
+
+    return b"".join(
+        [
+            b"RIFF",
+            riff_size.to_bytes(4, "little"),
+            b"WAVE",
+            b"fmt ",
+            (16).to_bytes(4, "little"),
+            (1).to_bytes(2, "little"),
+            channels.to_bytes(2, "little"),
+            sample_rate.to_bytes(4, "little"),
+            byte_rate.to_bytes(4, "little"),
+            block_align.to_bytes(2, "little"),
+            bits_per_sample.to_bytes(2, "little"),
+            b"data",
+            data_size.to_bytes(4, "little"),
+            audio,
+        ]
+    )
 
 
 def _transient_connection_errors() -> tuple[type[BaseException], ...]:
