@@ -637,11 +637,21 @@ export function useBackendRealtimeSession(
       ws.onerror = () => {
         addTranscriptBreadcrumb("Backend realtime socket error", {
           url,
+          readyState: ws.readyState,
           _breadcrumbType: "guardrail",
         });
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        if (status !== "DISCONNECTED") {
+          addTranscriptBreadcrumb("Backend realtime socket closed", {
+            url,
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean,
+            _breadcrumbType: "guardrail",
+          });
+        }
         stopPlayback();
         wsRef.current = null;
         sessionIdRef.current = null;
@@ -653,6 +663,7 @@ export function useBackendRealtimeSession(
       ensureMicrophonePipeline,
       handleServerEvent,
       resumeInputAudioContext,
+      status,
       stopPlayback,
       updateStatus,
     ],
