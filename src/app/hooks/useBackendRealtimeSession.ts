@@ -9,6 +9,7 @@ import { SessionStatus } from "../types";
 const PCM_SAMPLE_RATE = 24000;
 const AUDIO_START_LOOKAHEAD_SECONDS = 0.06;
 const TRANSFER_AUDIO_SETTLE_MS = 120;
+const BACKEND_REALTIME_PATH = "/api/v1/callcenter/realtime/ws";
 
 type QueuedAudio = {
   data: string;
@@ -34,21 +35,36 @@ export interface BackendConnectOptions {
 function getBackendWsUrl(): string {
   const explicit = process.env.NEXT_PUBLIC_CALLCENTER_BACKEND_WS_URL?.trim();
   if (explicit) {
-    return explicit.replace(/\/+$/, "");
+    const normalized = explicit.replace(/\/+$/, "");
+    if (
+      typeof window !== "undefined" &&
+      window.location.protocol === "https:" &&
+      normalized.startsWith("ws://") &&
+      !normalized.startsWith("ws://127.0.0.1") &&
+      !normalized.startsWith("ws://localhost")
+    ) {
+      return `wss://${normalized.slice("ws://".length)}`;
+    }
+    return normalized;
   }
 
   const proxyBase = process.env.NEXT_PUBLIC_FRONTEND_BACKEND_BASE_URL?.trim();
   if (proxyBase) {
     const normalized = proxyBase.replace(/\/+$/, "");
     if (normalized.startsWith("https://")) {
-      return `wss://${normalized.slice("https://".length)}/api/v1/callcenter/realtime/ws`;
+      return `wss://${normalized.slice("https://".length)}${BACKEND_REALTIME_PATH}`;
     }
     if (normalized.startsWith("http://")) {
-      return `ws://${normalized.slice("http://".length)}/api/v1/callcenter/realtime/ws`;
+      return `ws://${normalized.slice("http://".length)}${BACKEND_REALTIME_PATH}`;
     }
   }
 
-  return "ws://127.0.0.1:8000/api/v1/callcenter/realtime/ws";
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${window.location.host}${BACKEND_REALTIME_PATH}`;
+  }
+
+  return `ws://127.0.0.1:8000${BACKEND_REALTIME_PATH}`;
 }
 
 function maybeParseJson(value: unknown): unknown {

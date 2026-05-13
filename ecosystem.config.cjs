@@ -19,6 +19,8 @@
  *
  * The NEXT_PUBLIC_* values are included for runtime consistency, but client-side
  * Next.js public env vars should also be present when `npm run build` is run.
+ * In HTTPS production, the browser WebSocket URL must be wss:// and must point
+ * at a public backend/reverse-proxy hostname, not ws://127.0.0.1.
  */
 module.exports = {
   apps: [
@@ -37,7 +39,7 @@ module.exports = {
         BACKEND_PORT: "4011",
         BACKEND_BASE_URL: "http://127.0.0.1:4011",
         FRONTEND_BACKEND_BASE_URL: "http://127.0.0.1:4011",
-        ALLOWED_ORIGINS: "http://127.0.0.1:3014,http://localhost:3014, https://demovoice.atenxion.ai",
+        ALLOWED_ORIGINS: "http://127.0.0.1:3014,http://localhost:3014,https://demovoice.atenxion.ai",
         LOG_LEVEL: "INFO",
       },
     },
