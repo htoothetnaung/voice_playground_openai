@@ -45,8 +45,7 @@ yarn-error.log*
 /.vscode
 salesforce_research/
 /docs
-filler_sounds/
-public/filler_sounds/
+/filler_sounds/
 src/**/.cache/
 src/**/tmp/
 src/**/temp/

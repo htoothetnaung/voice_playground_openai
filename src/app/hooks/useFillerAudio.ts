@@ -2,8 +2,14 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
+const TRANSFER_AUDIO_SOURCES = [
+  "/filler_sounds/realistic_phone_ringing.wav",
+  "/filler_sounds/phone_transfer_ringing.mp3",
+];
+
 export function useFillerAudio(enabled: boolean = true) {
   const transferAudioRef = useRef<HTMLAudioElement | null>(null);
+  const transferAudioSourceIndexRef = useRef(0);
   const transferStopTimerRef = useRef<number | null>(null);
   const pendingTransferDurationMsRef = useRef<number | undefined>(undefined);
   const pendingModeRef = useRef<"transfer" | null>(null);
@@ -13,9 +19,23 @@ export function useFillerAudio(enabled: boolean = true) {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    transferAudioRef.current = new Audio("/filler_sounds/realistic_phone_ringing.wav");
-    transferAudioRef.current.loop = true;
-    transferAudioRef.current.volume = 0.18;
+    const createTransferAudio = (sourceIndex: number): HTMLAudioElement => {
+      const audio = new Audio(TRANSFER_AUDIO_SOURCES[sourceIndex]);
+      audio.loop = true;
+      audio.preload = "auto";
+      audio.volume = 0.18;
+      audio.addEventListener("error", () => {
+        const nextSourceIndex = sourceIndex + 1;
+        if (nextSourceIndex >= TRANSFER_AUDIO_SOURCES.length) return;
+        transferAudioSourceIndexRef.current = nextSourceIndex;
+        transferAudioRef.current?.pause();
+        transferAudioRef.current = createTransferAudio(nextSourceIndex);
+      });
+      return audio;
+    };
+
+    transferAudioRef.current = createTransferAudio(transferAudioSourceIndexRef.current);
+    transferAudioRef.current.load();
 
     return () => {
       if (transferStopTimerRef.current !== null) {
@@ -69,6 +89,7 @@ export function useFillerAudio(enabled: boolean = true) {
     const audio = transferAudioRef.current;
     if (!audio) return;
     audio.currentTime = 0;
+    audio.load();
     audio.play().catch(() => undefined);
     if (typeof window !== "undefined") {
       transferStopTimerRef.current = window.setTimeout(() => {
