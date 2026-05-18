@@ -37,7 +37,7 @@ function Events({ isExpanded }: EventsProps) {
         (isExpanded
           ? "max-h-64 w-full overflow-auto opacity-100 lg:max-h-none lg:w-[38%]"
           : "max-h-0 w-full overflow-hidden opacity-0 lg:w-0") +
-        " flex-col rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-200 ease-in-out"
+        " hidden flex-col rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-200 ease-in-out lg:flex"
       }
       ref={eventLogsContainerRef}
     >

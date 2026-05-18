@@ -44,6 +44,43 @@ def test_nova_aggregator_concatenates_final_segments_until_speech_final() -> Non
     assert speech_final[0].text == "my account number is two three four five"
 
 
+def test_nova_aggregator_accepts_list_channel_shape() -> None:
+    """Verify live Deepgram messages with list-shaped channel payloads still produce transcripts."""
+    aggregator = DeepgramTranscriptAggregator("nova-3")
+
+    events = aggregator.ingest(
+        {
+            "type": "Results",
+            "is_final": True,
+            "speech_final": True,
+            "channel": [
+                {"alternatives": [{"transcript": "I need help with my bill"}]},
+            ],
+        }
+    )
+
+    assert len(events) == 1
+    assert events[0].event_type == "stt_final"
+    assert events[0].text == "I need help with my bill"
+    assert events[0].speech_final is True
+
+
+def test_nova_aggregator_ignores_malformed_channel_shapes() -> None:
+    """Verify unexpected Deepgram channel shapes do not crash the STT receive task."""
+    aggregator = DeepgramTranscriptAggregator("nova-3")
+
+    events = aggregator.ingest(
+        {
+            "type": "Results",
+            "is_final": True,
+            "speech_final": True,
+            "channel": [[]],
+        }
+    )
+
+    assert events == []
+
+
 def test_nova_utterance_end_flushes_buffer_without_duplicate_minus_one() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     aggregator = DeepgramTranscriptAggregator("nova-3")

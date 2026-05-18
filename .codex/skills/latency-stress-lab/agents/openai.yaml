@@ -1,0 +1,4 @@
+interface:
+  display_name: "Latency Stress Lab"
+  short_description: "Extend and debug the repo-local latency benchmark suite"
+  default_prompt: "Use the latency-stress-lab skill to add or inspect benchmark scenarios in this repo."

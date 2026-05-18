@@ -1,7 +1,13 @@
 """Contains tests for cascaded runtime event tests. in the backend."""
+import asyncio
+
 import pytest
 
 from app.agents.callcenter.cascaded import runtime as cascaded_runtime
+from app.agents.callcenter.cascaded.deepgram import (
+    DeepgramTranscriptAggregator,
+    TranscriptEvent,
+)
 from app.agents.callcenter.cascaded.runtime import (
     CallCenterCascadedRuntime,
     _direct_handoff_agent_name,
@@ -59,6 +65,14 @@ class FakeTTSAdapter:
         yield b"\x00\x00" * 960
 
 
+class FakeTranscriber:
+    """Test transcriber with the queue/aggregator surface used by the runtime."""
+    def __init__(self) -> None:
+        """Initialize this object with the dependencies it needs for the surrounding backend workflow."""
+        self.events: asyncio.Queue[TranscriptEvent] = asyncio.Queue()
+        self.aggregator = DeepgramTranscriptAggregator("nova-3")
+
+
 @pytest.mark.asyncio
 async def test_cascaded_runtime_normalizes_tool_events() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
@@ -80,6 +94,52 @@ async def test_cascaded_runtime_normalizes_tool_events() -> None:
     assert websocket.messages[0]["tool_name"] == "lookup_customer_profile"
     assert websocket.messages[1]["type"] == "tool_end"
     assert websocket.messages[1]["output"] == {"found": True}
+
+
+@pytest.mark.asyncio
+async def test_cascaded_runtime_starts_turn_after_final_transcript_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify final STT text reaches the agent even when Deepgram omits speech_final."""
+    monkeypatch.setattr(cascaded_runtime, "STT_FINAL_FALLBACK_MS", 10)
+    runtime = CallCenterCascadedRuntime(Settings(OPENAI_API_KEY="sk-test"))
+    websocket = FakeWebSocket()
+    transcriber = FakeTranscriber()
+    started_turns: list[str] = []
+
+    async def fake_start_agent_turn(*args, **kwargs):
+        started_turns.append(kwargs["text"])
+
+    monkeypatch.setattr(runtime, "_start_agent_turn", fake_start_agent_turn)
+    transcriber.aggregator.ingest(
+        {
+            "type": "Results",
+            "is_final": True,
+            "speech_final": False,
+            "channel": {"alternatives": [{"transcript": "hello"}]},
+        }
+    )
+
+    task = asyncio.create_task(
+        runtime._consume_transcripts(
+            websocket,
+            transcriber,
+            starting_agent=object(),
+            context=CallCenterContext(session_id="session", trace_id="trace"),
+            session=object(),
+            tts_adapter=None,
+        )
+    )
+    await transcriber.events.put(
+        TranscriptEvent("stt_final", "hello", True, False, {})
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert {"type": "turn_detected", "text": "hello"} in websocket.messages
+    assert started_turns == ["hello"]
 
 
 def test_cascaded_handoff_intro_uses_named_agents() -> None:

@@ -9,15 +9,16 @@ import {
 } from "@radix-ui/react-icons";
 
 import { SessionStatus } from "@/app/types";
+import type { MicActivity } from "@/app/hooks/useBackendRealtimeSession";
 
 interface BottomToolbarProps {
   sessionStatus: SessionStatus;
   onToggleConnection: () => void;
-  isPTTActive: boolean;
-  setIsPTTActive: (val: boolean) => void;
-  isPTTUserSpeaking: boolean;
-  handleTalkButtonDown: () => void;
-  handleTalkButtonUp: () => void;
+  isMicrophoneEnabled: boolean;
+  setIsMicrophoneEnabled: (val: boolean) => void;
+  micLevel: number;
+  micSamples: number[];
+  micActivity: MicActivity;
   isEventsPaneExpanded: boolean;
   setIsEventsPaneExpanded: (val: boolean) => void;
   isAudioPlaybackEnabled: boolean;
@@ -28,14 +29,44 @@ interface BottomToolbarProps {
   onCodecChange: (newCodec: string) => void;
 }
 
+const ACTIVITY_PRESENTATION: Record<
+  MicActivity,
+  { label: string; tone: string; dot: string; meter: string }
+> = {
+  muted: {
+    label: "Mic off",
+    tone: "text-slate-500",
+    dot: "bg-slate-400",
+    meter: "bg-slate-300",
+  },
+  quiet: {
+    label: "Quiet",
+    tone: "text-slate-600",
+    dot: "bg-slate-400",
+    meter: "bg-slate-400",
+  },
+  noise: {
+    label: "Background noise",
+    tone: "text-amber-700",
+    dot: "bg-amber-400",
+    meter: "bg-amber-400",
+  },
+  speech: {
+    label: "Speech detected",
+    tone: "text-emerald-700",
+    dot: "bg-emerald-500",
+    meter: "bg-emerald-500",
+  },
+};
+
 function BottomToolbar({
   sessionStatus,
   onToggleConnection,
-  isPTTActive,
-  setIsPTTActive,
-  isPTTUserSpeaking,
-  handleTalkButtonDown,
-  handleTalkButtonUp,
+  isMicrophoneEnabled,
+  setIsMicrophoneEnabled,
+  micLevel,
+  micSamples,
+  micActivity,
   isEventsPaneExpanded,
   setIsEventsPaneExpanded,
   isAudioPlaybackEnabled,
@@ -47,25 +78,13 @@ function BottomToolbar({
 }: BottomToolbarProps) {
   const isConnected = sessionStatus === "CONNECTED";
   const isConnecting = sessionStatus === "CONNECTING";
+  const activity =
+    isConnected && isMicrophoneEnabled
+      ? ACTIVITY_PRESENTATION[micActivity]
+      : ACTIVITY_PRESENTATION.muted;
 
   const handleCodecChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     onCodecChange(e.target.value);
-  };
-
-  const handleTalkPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (!e.isPrimary) return;
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    handleTalkButtonDown();
-  };
-
-  const handleTalkPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (!e.isPrimary) return;
-    e.preventDefault();
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    handleTalkButtonUp();
   };
 
   function getConnectionButtonLabel() {
@@ -86,9 +105,11 @@ function BottomToolbar({
     return `bg-slate-900 hover:bg-slate-800 ${cursorClass} ${baseClasses}`;
   }
 
+  const levelPercent = Math.round(Math.min(1, Math.max(0, micLevel)) * 100);
+
   return (
     <div className="border-t border-slate-200 bg-white/95 px-3 py-3 backdrop-blur sm:px-4">
-      <div className="mx-auto grid max-w-7xl gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm lg:grid-cols-[auto_1fr_auto] lg:items-center lg:p-4">
+      <div className="mx-auto grid max-w-7xl gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm xl:grid-cols-[auto_minmax(20rem,1fr)_auto] xl:items-center xl:p-4">
         <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
           <button
             onClick={onToggleConnection}
@@ -99,64 +120,82 @@ function BottomToolbar({
             {getConnectionButtonLabel()}
           </button>
 
-          <label className="inline-flex h-12 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50">
-            <input
-              id="push-to-talk"
-              type="checkbox"
-              checked={isPTTActive}
-              onChange={(e) => setIsPTTActive(e.target.checked)}
-              disabled={!isConnected}
-              className="h-4 w-4"
-            />
-            Push to talk
-          </label>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-          <button
-            onPointerDown={handleTalkPointerDown}
-            onPointerUp={handleTalkPointerUp}
-            onPointerCancel={handleTalkPointerUp}
-            disabled={!isConnected || !isPTTActive}
+          <label
             className={
-              "group relative flex min-h-20 w-full touch-none items-center justify-center overflow-hidden rounded-xl px-5 py-4 text-center transition active:scale-[0.99] sm:min-h-16 " +
-              (isConnected && isPTTActive
-                ? isPTTUserSpeaking
-                  ? "bg-emerald-600 text-white shadow-[0_0_0_4px_rgba(16,185,129,0.16)]"
-                  : "bg-slate-900 text-white hover:bg-slate-800"
-                : "cursor-not-allowed bg-slate-100 text-slate-400")
+              "inline-flex h-12 cursor-pointer items-center justify-center gap-3 rounded-xl border px-3 text-sm font-semibold shadow-sm transition " +
+              (isConnected && isMicrophoneEnabled
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                : isConnected
+                  ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  : "cursor-not-allowed border-slate-200 bg-white text-slate-400")
             }
           >
+            <input
+              id="microphone-enabled"
+              type="checkbox"
+              checked={isMicrophoneEnabled}
+              onChange={(e) => setIsMicrophoneEnabled(e.target.checked)}
+              disabled={!isConnected}
+              className="sr-only"
+            />
             <span
               className={
-                "mr-3 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full " +
-                (isPTTUserSpeaking ? "bg-white/20" : "bg-white/10")
+                "relative h-5 w-9 rounded-full transition " +
+                (isConnected && isMicrophoneEnabled
+                  ? "bg-emerald-500"
+                  : "bg-slate-300")
               }
               aria-hidden="true"
             >
               <span
                 className={
-                  "h-3 w-3 rounded-full " +
-                  (isPTTUserSpeaking ? "bg-white" : "bg-emerald-300")
+                  "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition " +
+                  (isMicrophoneEnabled ? "left-4" : "left-0.5")
                 }
               />
             </span>
-            <span className="min-w-0">
-              <span className="block text-base font-semibold">
-                {isPTTUserSpeaking ? "Listening..." : "Hold to talk"}
-              </span>
-              <span className="block text-xs opacity-75">
-                {isConnected
-                  ? isPTTActive
-                    ? "Press and release when finished"
-                    : "Turn on push to talk to use this"
-                  : "Connect to start a call"}
-              </span>
-            </span>
-          </button>
+            Mic
+          </label>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:flex lg:items-center">
+        <div className="min-w-0 rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-sm sm:px-4">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span
+                className={`h-2.5 w-2.5 flex-shrink-0 rounded-full ${activity.dot}`}
+                aria-hidden="true"
+              />
+              <span
+                className={`truncate text-sm font-semibold ${activity.tone}`}
+              >
+                {activity.label}
+              </span>
+            </div>
+            <span className="font-mono text-xs text-slate-500">
+              {isConnected && isMicrophoneEnabled ? `${levelPercent}%` : "--"}
+            </span>
+          </div>
+
+          <div
+            className="flex h-12 items-center gap-1 overflow-hidden rounded-xl bg-slate-100 px-2"
+            aria-label={`Microphone level: ${activity.label}`}
+          >
+            {micSamples.map((sample, index) => {
+              const height = isConnected && isMicrophoneEnabled
+                ? Math.max(12, Math.round(sample * 44))
+                : 8;
+              return (
+                <span
+                  key={`${index}-${micSamples.length}`}
+                  className={`w-full rounded-full transition-all duration-100 ${activity.meter}`}
+                  style={{ height }}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:flex xl:items-center">
           <label
             className={
               "flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-sm shadow-sm transition " +
@@ -197,7 +236,7 @@ function BottomToolbar({
 
           <label
             className={
-              "flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-sm shadow-sm transition " +
+              "hidden h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-sm shadow-sm transition lg:flex " +
               (isEventsPaneExpanded
                 ? "border-violet-200 bg-violet-50 text-violet-800"
                 : "border-slate-200 bg-white text-slate-600")

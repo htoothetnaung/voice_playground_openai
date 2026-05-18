@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 90_000;
 
 function getBackendBaseUrl(): string | null {
   const raw = process.env.FRONTEND_BACKEND_BASE_URL?.trim();

@@ -31,6 +31,7 @@ HANDOFF_TRANSFER_DELAY_SECONDS = 2.5
 MAX_AGENT_TURNS = 30
 PCM_BYTES_PER_SAMPLE = 2
 MIN_TTS_AUDIO_FRAME_MS = 40
+STT_FINAL_FALLBACK_MS = 900
 logger = logging.getLogger(__name__)
 
 AGENT_DISPLAY_DETAILS = {
@@ -388,41 +389,71 @@ class CallCenterCascadedRuntime:
         tts_adapter: ElevenLabsTTSAdapter | None,
     ) -> None:
         """Consume Deepgram transcript events and start an OpenAI agent turn when speech finalizes."""
-        while True:
-            event = await transcriber.events.get()
-            metrics = self._active_stt_metrics or self._new_metrics()
-            if event.event_type == "stt_partial":
-                if metrics.stt_first_partial_ms is None:
-                    metrics.stt_first_partial_ms = metrics.mark_ms()
-                await websocket.send_json({"type": "stt_partial", "text": event.text, "raw": event.raw})
-                continue
+        pending_final_task: asyncio.Task[None] | None = None
 
-            if event.event_type == "stt_final":
-                if metrics.stt_first_final_ms is None:
-                    metrics.stt_first_final_ms = metrics.mark_ms()
-                await websocket.send_json(
-                    {
-                        "type": "stt_final",
-                        "text": event.text,
-                        "is_final": event.is_final,
-                        "speech_final": event.speech_final,
-                    }
-                )
-                if not event.speech_final:
+        async def start_turn(event: TranscriptEvent, metrics: TurnMetrics) -> None:
+            text = event.text.strip()
+            if not text:
+                return
+            metrics.turn_detected_ms = metrics.mark_ms()
+            await websocket.send_json({"type": "turn_detected", "text": text})
+            self._active_stt_metrics = None
+            await self._start_agent_turn(
+                websocket,
+                text=text,
+                starting_agent=starting_agent,
+                context=context,
+                session=session,
+                tts_adapter=tts_adapter,
+                metrics=metrics,
+            )
+
+        async def start_turn_after_endpoint_timeout(
+            event: TranscriptEvent,
+            metrics: TurnMetrics,
+        ) -> None:
+            await asyncio.sleep(STT_FINAL_FALLBACK_MS / 1000)
+            flushed = transcriber.aggregator.flush()
+            await start_turn(flushed or event, metrics)
+
+        def cancel_pending_final() -> None:
+            nonlocal pending_final_task
+            if pending_final_task and not pending_final_task.done():
+                pending_final_task.cancel()
+            pending_final_task = None
+
+        try:
+            while True:
+                event = await transcriber.events.get()
+                metrics = self._active_stt_metrics or self._new_metrics()
+                if event.event_type == "stt_partial":
+                    cancel_pending_final()
+                    if metrics.stt_first_partial_ms is None:
+                        metrics.stt_first_partial_ms = metrics.mark_ms()
+                    await websocket.send_json({"type": "stt_partial", "text": event.text, "raw": event.raw})
                     continue
 
-                metrics.turn_detected_ms = metrics.mark_ms()
-                await websocket.send_json({"type": "turn_detected", "text": event.text})
-                self._active_stt_metrics = None
-                await self._start_agent_turn(
-                    websocket,
-                    text=event.text,
-                    starting_agent=starting_agent,
-                    context=context,
-                    session=session,
-                    tts_adapter=tts_adapter,
-                    metrics=metrics,
-                )
+                if event.event_type == "stt_final":
+                    cancel_pending_final()
+                    if metrics.stt_first_final_ms is None:
+                        metrics.stt_first_final_ms = metrics.mark_ms()
+                    await websocket.send_json(
+                        {
+                            "type": "stt_final",
+                            "text": event.text,
+                            "is_final": event.is_final,
+                            "speech_final": event.speech_final,
+                        }
+                    )
+                    if event.speech_final:
+                        await start_turn(event, metrics)
+                        continue
+
+                    pending_final_task = asyncio.create_task(
+                        start_turn_after_endpoint_timeout(event, metrics)
+                    )
+        finally:
+            cancel_pending_final()
 
     async def _start_agent_turn(
         self,

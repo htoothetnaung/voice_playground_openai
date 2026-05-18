@@ -80,6 +80,23 @@ class Settings(BaseSettings):
         default="backend/.data/callcenter_sessions.db",
         alias="CALLCENTER_SESSION_DB_PATH",
     )
+    stress_lab_enabled: bool = Field(default=False, alias="STRESS_LAB_ENABLED")
+    stress_lab_real_openai_tools_enabled: bool = Field(
+        default=False,
+        alias="STRESS_LAB_REAL_OPENAI_TOOLS_ENABLED",
+    )
+    stress_lab_results_path: str = Field(
+        default="backend/.data/stress_lab_runs.json",
+        alias="STRESS_LAB_RESULTS_PATH",
+    )
+    stress_lab_openai_model: str = Field(
+        default="gpt-4.1",
+        alias="STRESS_LAB_OPENAI_MODEL",
+    )
+    stress_lab_vector_store_id: str | None = Field(
+        default=None,
+        alias="STRESS_LAB_VECTOR_STORE_ID",
+    )
     mongodb_uri: str = Field(default="mongodb://127.0.0.1:27017", alias="MONGODB_URI")
     mongodb_db: str = Field(default="atenxion_callcenter", alias="MONGODB_DB")
 

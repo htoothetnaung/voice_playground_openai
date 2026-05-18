@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
+import { ChevronDownIcon } from "@radix-ui/react-icons";
 
 import { SessionStatus } from "@/app/types";
 import { allAgentSets, defaultAgentSetKey } from "@/app/agentConfigs";
@@ -33,22 +34,14 @@ function App() {
   const [isEventsPaneExpanded, setIsEventsPaneExpanded] =
     useState<boolean>(true);
   const [userText, setUserText] = useState<string>("");
-  const [isPTTActive, setIsPTTActive] = useState<boolean>(false);
-  const [isPTTUserSpeaking, setIsPTTUserSpeaking] = useState<boolean>(false);
-  const [isAudioPlaybackEnabled, setIsAudioPlaybackEnabled] = useState<boolean>(
-    () => {
-      if (typeof window === "undefined") return true;
-      const stored = localStorage.getItem("audioPlaybackEnabled");
-      return stored ? stored === "true" : true;
-    }
-  );
-  const [areFillerSoundsEnabled, setAreFillerSoundsEnabled] = useState<boolean>(
-    () => {
-      if (typeof window === "undefined") return true;
-      const stored = localStorage.getItem("fillerSoundsEnabled");
-      return stored ? stored === "true" : true;
-    }
-  );
+  const [isMicrophoneEnabled, setIsMicrophoneEnabled] =
+    useState<boolean>(true);
+  const [areMobileSettingsOpen, setAreMobileSettingsOpen] =
+    useState<boolean>(false);
+  const [isAudioPlaybackEnabled, setIsAudioPlaybackEnabled] =
+    useState<boolean>(true);
+  const [areFillerSoundsEnabled, setAreFillerSoundsEnabled] =
+    useState<boolean>(true);
   const {
     playTransfer,
     stopToolWait,
@@ -56,9 +49,17 @@ function App() {
     setAssistantAudioActive,
   } = useFillerAudio(areFillerSoundsEnabled);
   const handoffTriggeredRef = useRef(false);
-  const pttUserSpeakingRef = useRef(false);
 
-  const { connect, disconnect, sendUserText, sendEvent, interrupt, mute } =
+  const {
+    connect,
+    disconnect,
+    sendUserText,
+    sendEvent,
+    interrupt,
+    mute,
+    setMicrophoneEnabled: setBackendMicrophoneEnabled,
+    micMeter,
+  } =
     useBackendRealtimeSession({
       onConnectionChange: (s) => setSessionStatus(s as SessionStatus),
       onAgentHandoff: (agentName: string) => {
@@ -156,12 +157,6 @@ function App() {
     }
   }, [selectedAgentConfigSet, selectedAgentName, sessionStatus]);
 
-  useEffect(() => {
-    if (sessionStatus === "CONNECTED") {
-      updateSession();
-    }
-  }, [isPTTActive]);
-
   const connectToRealtime = async () => {
     const agentSetKey = searchParams.get("agentConfig") || "default";
     if (!allAgentSets[agentSetKey]) return;
@@ -185,8 +180,6 @@ function App() {
     stopAll();
     disconnect();
     setSessionStatus("DISCONNECTED");
-    pttUserSpeakingRef.current = false;
-    setIsPTTUserSpeaking(false);
   };
 
   const sendSimulatedUserMessage = (text: string) => {
@@ -209,23 +202,19 @@ function App() {
   };
 
   const updateSession = (shouldTriggerResponse: boolean = false) => {
-    const turnDetection = isPTTActive
-      ? null
-      : {
-          type: "server_vad",
-          threshold: 0.9,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 500,
-          create_response: true,
-        };
-
     sendEvent({
       type: "session.update",
       session: {
         type: "realtime",
         audio: {
           input: {
-            turn_detection: turnDetection,
+            turn_detection: {
+              type: "server_vad",
+              threshold: 0.9,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 500,
+              create_response: true,
+            },
           },
         },
       },
@@ -247,25 +236,6 @@ function App() {
     }
 
     setUserText("");
-  };
-
-  const handleTalkButtonDown = () => {
-    if (sessionStatus !== "CONNECTED") return;
-    if (pttUserSpeakingRef.current) return;
-    interrupt();
-
-    pttUserSpeakingRef.current = true;
-    setIsPTTUserSpeaking(true);
-    sendClientEvent({ type: "input_audio_buffer.clear" }, "clear PTT buffer");
-  };
-
-  const handleTalkButtonUp = () => {
-    if (sessionStatus !== "CONNECTED" || !pttUserSpeakingRef.current) return;
-
-    pttUserSpeakingRef.current = false;
-    setIsPTTUserSpeaking(false);
-    sendClientEvent({ type: "input_audio_buffer.commit" }, "commit PTT");
-    sendClientEvent({ type: "response.create" }, "trigger response PTT");
   };
 
   const onToggleConnection = () => {
@@ -306,9 +276,9 @@ function App() {
   };
 
   useEffect(() => {
-    const storedPushToTalkUI = localStorage.getItem("pushToTalkUI");
-    if (storedPushToTalkUI) {
-      setIsPTTActive(storedPushToTalkUI === "true");
+    const storedMicrophoneEnabled = localStorage.getItem("microphoneEnabled");
+    if (storedMicrophoneEnabled) {
+      setIsMicrophoneEnabled(storedMicrophoneEnabled === "true");
     }
     const storedLogsExpanded = localStorage.getItem("logsExpanded");
     if (storedLogsExpanded) {
@@ -329,8 +299,12 @@ function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("pushToTalkUI", isPTTActive.toString());
-  }, [isPTTActive]);
+    localStorage.setItem("microphoneEnabled", isMicrophoneEnabled.toString());
+  }, [isMicrophoneEnabled]);
+
+  useEffect(() => {
+    setBackendMicrophoneEnabled(isMicrophoneEnabled);
+  }, [isMicrophoneEnabled, setBackendMicrophoneEnabled]);
 
   useEffect(() => {
     localStorage.setItem("logsExpanded", isEventsPaneExpanded.toString());
@@ -385,31 +359,53 @@ function App() {
 
   return (
     <div className="relative flex h-[100dvh] min-h-[100dvh] flex-col bg-slate-100 text-base text-slate-800">
-      <div className="border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur sm:px-6 lg:py-5">
+      <div className="border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:px-6 lg:py-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div
-            className="flex min-w-0 cursor-pointer items-center gap-3"
-            onClick={() => window.location.reload()}
-          >
-            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-100">
-              <Image
-                src="/atenxion_logo.png"
-                alt="Atenxion Logo"
-                width={28}
-                height={28}
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <div
+              className="flex min-w-0 cursor-pointer items-center gap-3"
+              onClick={() => window.location.reload()}
+            >
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 sm:h-11 sm:w-11">
+                <Image
+                  src="/atenxion_logo.png"
+                  alt="Atenxion Logo"
+                  width={28}
+                  height={28}
+                />
+              </div>
+              <div className="flex min-w-0 flex-col">
+                <span className="truncate text-base font-semibold text-slate-900 sm:text-lg">
+                  Atenxion Call Center Lab
+                </span>
+                <span className="line-clamp-1 text-xs font-normal leading-5 text-slate-500 sm:text-sm">
+                  Realtime handoffs, tool calls, guardrails, and call-floor audio cues
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setAreMobileSettingsOpen((open) => !open)}
+              aria-expanded={areMobileSettingsOpen}
+              className="inline-flex h-10 flex-shrink-0 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm lg:hidden"
+            >
+              <span>Setup</span>
+              <ChevronDownIcon
+                className={
+                  "transition-transform " +
+                  (areMobileSettingsOpen ? "rotate-180" : "rotate-0")
+                }
               />
-            </div>
-            <div className="flex min-w-0 flex-col">
-              <span className="truncate text-lg font-semibold text-slate-900">
-                Atenxion Call Center Lab
-              </span>
-              <span className="line-clamp-2 text-sm font-normal leading-5 text-slate-500 sm:line-clamp-1">
-                Realtime handoffs, tool calls, guardrails, and call-floor audio cues
-              </span>
-            </div>
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:flex xl:items-center xl:gap-4">
+          <div
+            className={
+              "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:flex xl:items-center xl:gap-4 " +
+              (areMobileSettingsOpen ? "grid" : "hidden lg:flex")
+            }
+          >
             <div className="flex items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 sm:justify-start xl:py-1">
               Telecom support simulation
             </div>
@@ -498,7 +494,7 @@ function App() {
         </div>
       </div>
 
-      <div className="relative flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3 lg:flex-row">
+      <div className="relative flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-2 sm:p-3 lg:flex-row">
         <Transcript
           userText={userText}
           setUserText={setUserText}
@@ -513,11 +509,11 @@ function App() {
       <BottomToolbar
         sessionStatus={sessionStatus}
         onToggleConnection={onToggleConnection}
-        isPTTActive={isPTTActive}
-        setIsPTTActive={setIsPTTActive}
-        isPTTUserSpeaking={isPTTUserSpeaking}
-        handleTalkButtonDown={handleTalkButtonDown}
-        handleTalkButtonUp={handleTalkButtonUp}
+        isMicrophoneEnabled={isMicrophoneEnabled}
+        setIsMicrophoneEnabled={setIsMicrophoneEnabled}
+        micLevel={micMeter.micLevel}
+        micSamples={micMeter.micSamples}
+        micActivity={micMeter.micActivity}
         isEventsPaneExpanded={isEventsPaneExpanded}
         setIsEventsPaneExpanded={setIsEventsPaneExpanded}
         isAudioPlaybackEnabled={isAudioPlaybackEnabled}

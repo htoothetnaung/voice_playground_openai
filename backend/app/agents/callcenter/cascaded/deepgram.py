@@ -285,7 +285,12 @@ class DeepgramStreamingTranscriber:
                     message = json.loads(raw_message)
                 except json.JSONDecodeError:
                     continue
-                for event in self.aggregator.ingest(message):
+                try:
+                    events = self.aggregator.ingest(message)
+                except Exception:
+                    logger.exception("Failed to parse Deepgram STT message")
+                    continue
+                for event in events:
                     await self.events.put(event)
         except _transient_connection_errors():
             if not self._closed:
@@ -306,11 +311,25 @@ class DeepgramStreamingTranscriber:
 
 def _extract_transcript(message: dict[str, Any]) -> str:
     """Extract the best transcript string from a Deepgram Nova result payload."""
-    channel = message.get("channel") or {}
+    channel = _first_mapping(message.get("channel"))
     alternatives = channel.get("alternatives") or []
+    if not isinstance(alternatives, list):
+        return ""
     if not alternatives:
         return ""
-    return str(alternatives[0].get("transcript") or "")
+    alternative = _first_mapping(alternatives)
+    return str(alternative.get("transcript") or "")
+
+
+def _first_mapping(value: Any) -> dict[str, Any]:
+    """Return the first mapping from a provider value that may be a dict or list."""
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                return item
+    return {}
 
 
 def _pcm16_wav(audio: bytes, sample_rate: int) -> bytes:

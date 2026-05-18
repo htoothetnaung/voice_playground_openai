@@ -10,6 +10,16 @@ const PCM_SAMPLE_RATE = 24000;
 const AUDIO_START_LOOKAHEAD_SECONDS = 0.06;
 const TRANSFER_AUDIO_SETTLE_MS = 120;
 const BACKEND_REALTIME_PATH = "/api/v1/callcenter/realtime/ws";
+const MIC_SAMPLE_BUCKETS = 28;
+const MIC_METER_UPDATE_MS = 80;
+
+export type MicActivity = "muted" | "quiet" | "noise" | "speech";
+
+export type MicMeterState = {
+  micLevel: number;
+  micSamples: number[];
+  micActivity: MicActivity;
+};
 
 type QueuedAudio = {
   data: string;
@@ -159,6 +169,7 @@ export function useBackendRealtimeSession(
   const sessionIdRef = useRef<string | null>(null);
   const [status, setStatus] = useState<SessionStatus>("DISCONNECTED");
   const playbackEnabledRef = useRef(true);
+  const microphoneEnabledRef = useRef(true);
   const manualPttModeRef = useRef(false);
   const pttSpeakingRef = useRef(false);
   const activeOutputSourcesRef = useRef<AudioBufferSourceNode[]>([]);
@@ -177,7 +188,13 @@ export function useBackendRealtimeSession(
   const inputSilenceGainRef = useRef<GainNode | null>(null);
   const hasBufferedAudioRef = useRef(false);
   const micFramesSentRef = useRef(0);
+  const lastMicMeterUpdateRef = useRef(0);
   const callbacksRef = useRef<BackendRealtimeSessionCallbacks>(callbacks);
+  const [micMeter, setMicMeter] = useState<MicMeterState>({
+    micLevel: 0,
+    micSamples: Array.from({ length: MIC_SAMPLE_BUCKETS }, () => 0),
+    micActivity: "muted",
+  });
 
   useEffect(() => {
     callbacksRef.current = callbacks;
@@ -528,6 +545,38 @@ export function useBackendRealtimeSession(
     ],
   );
 
+  const updateMicMeter = useCallback((input: Float32Array) => {
+    const now = window.performance.now();
+    if (now - lastMicMeterUpdateRef.current < MIC_METER_UPDATE_MS) return;
+    lastMicMeterUpdateRef.current = now;
+
+    let sumSquares = 0;
+    let peak = 0;
+    for (let i = 0; i < input.length; i += 1) {
+      const sample = Math.abs(input[i]);
+      sumSquares += sample * sample;
+      if (sample > peak) peak = sample;
+    }
+
+    const rms = Math.sqrt(sumSquares / Math.max(1, input.length));
+    const normalizedLevel = microphoneEnabledRef.current
+      ? Math.min(1, Math.max(peak * 1.4, Math.sqrt(rms) * 2.4))
+      : 0;
+    const micActivity: MicActivity = !microphoneEnabledRef.current
+      ? "muted"
+      : rms >= 0.055
+        ? "speech"
+        : rms >= 0.012
+          ? "noise"
+          : "quiet";
+
+    setMicMeter((current) => ({
+      micLevel: normalizedLevel,
+      micActivity,
+      micSamples: [...current.micSamples.slice(1), normalizedLevel],
+    }));
+  }, []);
+
   const ensureMicrophonePipeline = useCallback(async () => {
     if (microphoneStreamRef.current && processorNodeRef.current && inputAudioContextRef.current) {
       return;
@@ -547,14 +596,17 @@ export function useBackendRealtimeSession(
     const processorNode = audioContext.createScriptProcessor(4096, 1, 1);
 
     processorNode.onaudioprocess = (event) => {
+      const input = event.inputBuffer.getChannelData(0);
+      updateMicMeter(input);
+
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
       const shouldStreamAudio =
-        !manualPttModeRef.current || pttSpeakingRef.current;
+        microphoneEnabledRef.current &&
+        (!manualPttModeRef.current || pttSpeakingRef.current);
       if (!shouldStreamAudio) return;
 
-      const input = event.inputBuffer.getChannelData(0);
       const resampledInput = resampleLinear(
         input,
         event.inputBuffer.sampleRate,
@@ -578,7 +630,7 @@ export function useBackendRealtimeSession(
     sourceNodeRef.current = sourceNode;
     processorNodeRef.current = processorNode;
     inputSilenceGainRef.current = inputSilenceGain;
-  }, []);
+  }, [updateMicMeter]);
 
   const resumeInputAudioContext = useCallback(() => {
     const audioContext = inputAudioContextRef.current;
@@ -678,6 +730,11 @@ export function useBackendRealtimeSession(
     wsRef.current?.close();
     wsRef.current = null;
     void cleanupMicrophonePipeline();
+    setMicMeter({
+      micLevel: 0,
+      micSamples: Array.from({ length: MIC_SAMPLE_BUCKETS }, () => 0),
+      micActivity: "muted",
+    });
     updateStatus("DISCONNECTED");
   }, [cleanupMicrophonePipeline, stopPlayback, updateStatus]);
 
@@ -761,6 +818,22 @@ export function useBackendRealtimeSession(
     }
   }, [stopPlayback]);
 
+  const setMicrophoneEnabled = useCallback((enabled: boolean) => {
+    microphoneEnabledRef.current = enabled;
+    if (enabled) {
+      resumeInputAudioContext();
+      return;
+    }
+
+    pttSpeakingRef.current = false;
+    hasBufferedAudioRef.current = false;
+    setMicMeter((current) => ({
+      micLevel: 0,
+      micSamples: current.micSamples.map(() => 0),
+      micActivity: "muted",
+    }));
+  }, [resumeInputAudioContext]);
+
   useEffect(() => {
     const teardown = async () => {
       stopPlayback();
@@ -788,6 +861,8 @@ export function useBackendRealtimeSession(
     sendUserText,
     sendEvent,
     mute,
+    setMicrophoneEnabled,
+    micMeter,
     interrupt,
   } as const;
 }
