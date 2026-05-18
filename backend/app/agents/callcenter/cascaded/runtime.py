@@ -426,6 +426,14 @@ class CallCenterCascadedRuntime:
             while True:
                 event = await transcriber.events.get()
                 metrics = self._active_stt_metrics or self._new_metrics()
+                if event.event_type == "speech_started":
+                    cancel_pending_final()
+                    if self._response_task and not self._response_task.done():
+                        self._response_task.cancel()
+                        await websocket.send_json({"type": "audio_interrupted"})
+                    await websocket.send_json({"type": "speech_started"})
+                    continue
+
                 if event.event_type == "stt_partial":
                     cancel_pending_final()
                     if metrics.stt_first_partial_ms is None:
@@ -1145,16 +1153,31 @@ def _should_skip_self_transfer_sentence(sentence: str, active_agent_name: str) -
             "connect you with our billing",
             "connecting you to our billing",
             "connecting you with our billing",
+            "connect you to our payment",
+            "connect you with our payment",
+            "connecting you to our payment",
+            "connecting you with our payment",
+            "connect you now to our payment",
+            "connecting you now to our payment",
             "billing team for further assistance",
             "billing specialist for further assistance",
+            "payment specialist who can assist",
+            "payment specialist for further assistance",
+            "billing and payment",
         ),
         "technicalSupportAgent": (
             "connect you to our technical support",
             "connect you with our technical support",
             "connecting you to our technical support",
             "connecting you with our technical support",
+            "connect you to our network",
+            "connect you with our network",
+            "connecting you to our network",
+            "connecting you with our network",
             "technical support team for further assistance",
             "technical support specialist for further assistance",
+            "network specialist who can assist",
+            "network specialist for further assistance",
             "further assistance with your internet issue",
         ),
         "retentionAgent": (
@@ -1162,8 +1185,32 @@ def _should_skip_self_transfer_sentence(sentence: str, active_agent_name: str) -
             "connect you with our retention",
             "connecting you to our retention",
             "connecting you with our retention",
+            "connect you to our cancellation",
+            "connect you with our cancellation",
+            "connecting you to our cancellation",
+            "connecting you with our cancellation",
             "retention team for further assistance",
             "retention specialist for further assistance",
+            "cancellation specialist who can assist",
+            "cancellation specialist for further assistance",
+            "save specialist who can assist",
+            "save specialist for further assistance",
+        ),
+        "supervisorAgent": (
+            "connect you to our supervisor",
+            "connect you with our supervisor",
+            "connecting you to our supervisor",
+            "connecting you with our supervisor",
+            "floor supervisor for further assistance",
+            "supervisor who can assist",
+        ),
+        "humanEscalationAgent": (
+            "connect you to our escalation",
+            "connect you with our escalation",
+            "connecting you to our escalation",
+            "connecting you with our escalation",
+            "escalation specialist for further assistance",
+            "escalation desk for further assistance",
         ),
     }
     return any(

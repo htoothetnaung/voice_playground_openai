@@ -142,6 +142,40 @@ async def test_cascaded_runtime_starts_turn_after_final_transcript_timeout(
     assert started_turns == ["hello"]
 
 
+@pytest.mark.asyncio
+async def test_cascaded_runtime_interrupts_active_response_on_speech_started() -> None:
+    """Verify Deepgram speech-start VAD events stop assistant audio for barge-in."""
+    runtime = CallCenterCascadedRuntime(Settings(OPENAI_API_KEY="sk-test"))
+    websocket = FakeWebSocket()
+    transcriber = FakeTranscriber()
+
+    async def long_response() -> None:
+        await asyncio.sleep(60)
+
+    runtime._response_task = asyncio.create_task(long_response())
+    task = asyncio.create_task(
+        runtime._consume_transcripts(
+            websocket,
+            transcriber,
+            starting_agent=object(),
+            context=CallCenterContext(session_id="session", trace_id="trace"),
+            session=object(),
+            tts_adapter=None,
+        )
+    )
+    await transcriber.events.put(
+        TranscriptEvent("speech_started", "", False, False, {"type": "SpeechStarted"})
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert runtime._response_task.cancelled()
+    assert {"type": "audio_interrupted"} in websocket.messages
+    assert {"type": "speech_started"} in websocket.messages
+
+
 def test_cascaded_handoff_intro_uses_named_agents() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     assert (
@@ -382,6 +416,21 @@ def test_agent_sentence_filter_removes_same_team_transfer_claim() -> None:
     assert _should_skip_agent_sentence(
         "I'm now connecting you to our technical support team for further assistance with your internet issue.",
         "technicalSupportAgent",
+        None,
+    )
+    assert _should_skip_agent_sentence(
+        "I’m connecting you now to our payment specialist who can assist with billing and payment.",
+        "billingAgent",
+        None,
+    )
+    assert _should_skip_agent_sentence(
+        "I'm connecting you with our network specialist who can assist with your connection.",
+        "technicalSupportAgent",
+        None,
+    )
+    assert _should_skip_agent_sentence(
+        "I'll connect you to our cancellation specialist for further assistance.",
+        "retentionAgent",
         None,
     )
     assert not _should_skip_agent_sentence(

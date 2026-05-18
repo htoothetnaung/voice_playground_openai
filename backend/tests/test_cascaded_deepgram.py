@@ -123,6 +123,17 @@ def test_flux_end_of_turn_emits_final_turn() -> None:
     assert end[0].speech_final is True
 
 
+def test_speech_started_vad_event_is_normalized() -> None:
+    """Verify Deepgram VAD speech-start messages can drive barge-in interruption."""
+    aggregator = DeepgramTranscriptAggregator("nova-3")
+
+    events = aggregator.ingest({"type": "SpeechStarted", "channel": [0]})
+
+    assert len(events) == 1
+    assert events[0].event_type == "speech_started"
+    assert events[0].raw["type"] == "SpeechStarted"
+
+
 def test_flux_url_uses_v2_without_channels_param() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     transcriber = DeepgramStreamingTranscriber(

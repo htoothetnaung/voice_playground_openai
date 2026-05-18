@@ -35,6 +35,8 @@ class DeepgramTranscriptAggregator:
         message_type = message.get("type")
         if message_type == "TurnInfo":
             return self._ingest_flux(message)
+        if message_type == "SpeechStarted":
+            return [TranscriptEvent("speech_started", "", False, False, message)]
         if message_type == "UtteranceEnd":
             return self._ingest_utterance_end(message)
         if message_type == "Results" or "channel" in message:
