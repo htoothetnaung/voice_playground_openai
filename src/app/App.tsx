@@ -1,9 +1,17 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
-import { ChevronDownIcon } from "@radix-ui/react-icons";
+import {
+  ActivityLogIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  DashboardIcon,
+  LightningBoltIcon,
+} from "@radix-ui/react-icons";
 
 import { SessionStatus } from "@/app/types";
 import { allAgentSets, defaultAgentSetKey } from "@/app/agentConfigs";
@@ -37,6 +45,8 @@ function App() {
   const [isMicrophoneEnabled, setIsMicrophoneEnabled] =
     useState<boolean>(true);
   const [areMobileSettingsOpen, setAreMobileSettingsOpen] =
+    useState<boolean>(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] =
     useState<boolean>(false);
   const [isAudioPlaybackEnabled, setIsAudioPlaybackEnabled] =
     useState<boolean>(true);
@@ -358,7 +368,103 @@ function App() {
   const agentSetKey = searchParams.get("agentConfig") || "default";
 
   return (
-    <div className="relative flex h-[100dvh] min-h-[100dvh] flex-col bg-slate-100 text-base text-slate-800">
+    <div className="relative flex h-[100dvh] min-h-[100dvh] bg-slate-100 text-base text-slate-800">
+      <aside
+        className={
+          "hidden flex-col justify-between border-r border-slate-800 bg-slate-950 py-5 text-white transition-all lg:flex " +
+          (isSidebarCollapsed ? "w-[84px] px-3" : "w-[260px] px-5")
+        }
+      >
+        <div>
+          <div
+            className={
+              "flex items-center gap-3 " +
+              (isSidebarCollapsed ? "justify-center" : "")
+            }
+          >
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-cyan-300 text-slate-950">
+              <Image
+                src="/atenxion_logo.png"
+                alt="Atenxion Logo"
+                width={24}
+                height={24}
+              />
+            </div>
+            <div className={isSidebarCollapsed ? "hidden" : "min-w-0"}>
+              <p className="truncate text-sm font-semibold">Atenxion Lab</p>
+              <p className="text-xs text-slate-400">Voice operations</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+            className={
+              "mt-6 flex h-9 w-full items-center justify-center rounded-lg border border-white/15 text-slate-200 transition hover:bg-white/10 " +
+              (isSidebarCollapsed ? "" : "gap-2")
+            }
+            aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {isSidebarCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+            <span className={isSidebarCollapsed ? "hidden" : "text-sm font-medium"}>
+              Collapse
+            </span>
+          </button>
+
+          <nav className="mt-8 space-y-2 text-sm text-slate-300">
+            <Link
+              href="/"
+              className={
+                "flex items-center gap-3 rounded-lg bg-white/10 px-3 py-2 " +
+                (isSidebarCollapsed ? "justify-center" : "")
+              }
+            >
+              <DashboardIcon className="h-4 w-4 text-cyan-300" />
+              <span className={isSidebarCollapsed ? "hidden" : ""}>
+                Call Center Lab
+              </span>
+            </Link>
+            <Link
+              href="/stress-lab"
+              className={
+                "flex items-center gap-3 rounded-lg px-3 py-2 transition hover:bg-white/10 " +
+                (isSidebarCollapsed ? "justify-center" : "")
+              }
+            >
+              <LightningBoltIcon className="h-4 w-4 text-cyan-300" />
+              <span className={isSidebarCollapsed ? "hidden" : ""}>
+                Stress Lab
+              </span>
+            </Link>
+            <Link
+              href="/admin"
+              className={
+                "flex items-center gap-3 rounded-lg px-3 py-2 transition hover:bg-white/10 " +
+                (isSidebarCollapsed ? "justify-center" : "")
+              }
+            >
+              <ActivityLogIcon className="h-4 w-4 text-cyan-300" />
+              <span className={isSidebarCollapsed ? "hidden" : ""}>
+                Admin Console
+              </span>
+            </Link>
+          </nav>
+        </div>
+
+        <div
+          className={
+            "rounded-lg border border-white/15 p-3 text-xs text-slate-300 " +
+            (isSidebarCollapsed ? "hidden" : "")
+          }
+        >
+          <p className="font-semibold text-white">Realtime voice</p>
+          <p className="mt-1 leading-5 text-slate-400">
+            Handoffs, tools, transcript, and call audio.
+          </p>
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
       <div className="border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:px-6 lg:py-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center justify-between gap-3">
@@ -523,6 +629,7 @@ function App() {
         codec={urlCodec}
         onCodecChange={handleCodecChange}
       />
+      </div>
     </div>
   );
 }

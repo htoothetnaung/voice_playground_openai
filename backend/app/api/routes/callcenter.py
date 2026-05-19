@@ -100,6 +100,7 @@ async def scenario_metadata() -> dict[str, Any]:
             ],
             "supervisor": [
                 "lookupPolicyDocument",
+                "searchAtenxionKnowledgeBase",
                 "approveException",
                 "escalationDecision",
             ],

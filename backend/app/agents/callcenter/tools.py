@@ -1,11 +1,15 @@
 """Implements account lookup, verification, billing, technical support, retention, supervisor, and case-management tool behavior over mock data."""
 from datetime import datetime
 import re
+from time import monotonic
+from typing import Any
 
 from agents import RunContextWrapper, function_tool
+from openai import AsyncOpenAI
 
 from app.agents.callcenter.context import CallCenterContext
 from app.agents.callcenter.data_repository import CallCenterDataRepository
+from app.core.config import Settings, get_settings
 
 _DATE_FORMATS = (
     "%Y-%m-%d",
@@ -31,6 +35,14 @@ def create_case_id(prefix: str) -> str:
 def _repository() -> CallCenterDataRepository:
     """Create the data repository used by async tool functions."""
     return CallCenterDataRepository()
+
+
+def _settings() -> Settings:
+    return get_settings()
+
+
+def _openai_client(settings: Settings) -> AsyncOpenAI:
+    return AsyncOpenAI(api_key=settings.openai_api_key)
 
 
 def _verification_required() -> dict:
@@ -68,6 +80,154 @@ def _normalize_date_of_birth(value: str) -> str:
         except ValueError:
             continue
     return normalized.lower()
+
+
+def _clamp_search_result_count(max_num_results: int) -> int:
+    return max(1, min(int(max_num_results or 5), 50))
+
+
+def _build_vector_store_search_filters(
+    topic: str | None = None,
+    service_type: str | None = None,
+) -> dict[str, Any] | None:
+    filters = []
+    if topic:
+        filters.append({"type": "eq", "key": "topic", "value": topic})
+    if service_type:
+        filters.append({"type": "eq", "key": "service_type", "value": service_type})
+    if not filters:
+        return None
+    if len(filters) == 1:
+        return filters[0]
+    return {"type": "and", "filters": filters}
+
+
+def _build_vector_store_search_payload(
+    query: str,
+    max_num_results: int = 5,
+    topic: str | None = None,
+    service_type: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "query": query,
+        "max_num_results": _clamp_search_result_count(max_num_results),
+        "rewrite_query": True,
+    }
+    filters = _build_vector_store_search_filters(topic=topic, service_type=service_type)
+    if filters:
+        payload["filters"] = filters
+    return payload
+
+
+def _object_to_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    return {}
+
+
+def _normalize_search_results(response: Any, elapsed_ms: float) -> dict[str, Any]:
+    payload = _object_to_dict(response)
+    return _normalize_search_result_items(
+        payload.get("data", []) or [],
+        elapsed_ms,
+        search_query=payload.get("search_query"),
+        has_more=bool(payload.get("has_more", False)),
+    )
+
+
+def _normalize_search_result_items(
+    items: list[Any],
+    elapsed_ms: float,
+    *,
+    search_query: Any = None,
+    has_more: bool = False,
+) -> dict[str, Any]:
+    results = []
+    for item in items:
+        mapped = _object_to_dict(item)
+        snippets = []
+        for content in mapped.get("content", []) or []:
+            content_item = _object_to_dict(content)
+            text = str(content_item.get("text", "")).strip()
+            if text:
+                snippets.append(text[:600])
+        results.append(
+            {
+                "file_id": mapped.get("file_id"),
+                "filename": mapped.get("filename"),
+                "score": mapped.get("score"),
+                "attributes": mapped.get("attributes") or {},
+                "snippets": snippets,
+            }
+        )
+    return {
+        "available": True,
+        "result_count": len(results),
+        "results": results,
+        "search_query": search_query,
+        "has_more": has_more,
+        "latency_ms": round(elapsed_ms, 3),
+    }
+
+
+async def _search_atenxion_vector_store(
+    client: AsyncOpenAI,
+    vector_store_id: str,
+    *,
+    query: str,
+    max_num_results: int = 5,
+    topic: str | None = None,
+    service_type: str | None = None,
+) -> dict[str, Any]:
+    start = monotonic()
+    payload = _build_vector_store_search_payload(
+        query=query,
+        max_num_results=max_num_results,
+        topic=topic,
+        service_type=service_type,
+    )
+    paginator = client.vector_stores.search(vector_store_id, **payload)
+    items = []
+    async for item in paginator:
+        items.append(item)
+    return _normalize_search_result_items(items, (monotonic() - start) * 1000)
+
+
+async def _search_atenxion_knowledge_base_impl(
+    settings: Settings,
+    *,
+    query: str,
+    max_num_results: int = 5,
+    topic: str | None = None,
+    service_type: str | None = None,
+    client: AsyncOpenAI | None = None,
+) -> dict[str, Any]:
+    vector_store_id = settings.callcenter_rag_vector_store_id
+    if not vector_store_id:
+        return {
+            "available": False,
+            "reason": "CALLCENTER_RAG_VECTOR_STORE_ID is not configured.",
+            "results": [],
+            "result_count": 0,
+        }
+    try:
+        return await _search_atenxion_vector_store(
+            client or _openai_client(settings),
+            vector_store_id,
+            query=query,
+            max_num_results=max_num_results,
+            topic=topic,
+            service_type=service_type,
+        )
+    except Exception as exc:
+        return {
+            "available": False,
+            "reason": f"{type(exc).__name__}: {exc}",
+            "results": [],
+            "result_count": 0,
+        }
 
 
 @function_tool
@@ -440,6 +600,24 @@ async def lookup_policy_document(
         doc for doc in policy_docs if topic.lower() in doc["topic"].lower()
     ]
     return {"matches": matches}
+
+
+@function_tool
+async def search_atenxion_knowledge_base(
+    ctx: RunContextWrapper[CallCenterContext],
+    query: str,
+    max_num_results: int = 5,
+    topic: str | None = None,
+    service_type: str | None = None,
+) -> dict:
+    """Search Atenxion's OpenAI vector store for policy, troubleshooting, billing, and retention knowledge."""
+    return await _search_atenxion_knowledge_base_impl(
+        _settings(),
+        query=query,
+        max_num_results=max_num_results,
+        topic=topic,
+        service_type=service_type,
+    )
 
 
 @function_tool

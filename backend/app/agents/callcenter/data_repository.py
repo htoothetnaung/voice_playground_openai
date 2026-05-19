@@ -10,6 +10,7 @@ from app.agents.callcenter.mock_data import (
     ATENXION_LATEST_BILL,
     ATENXION_PLAN_CATALOG,
     ATENXION_POLICY_DOCS,
+    ATENXION_RAG_DOCUMENTS,
 )
 from app.core.config import Settings, get_settings
 from app.core.mongo import get_mongo_database
@@ -20,6 +21,7 @@ MOCK_DATA_COLLECTIONS = {
     "latest_bills": [ATENXION_LATEST_BILL],
     "plan_catalog": ATENXION_PLAN_CATALOG,
     "policy_docs": ATENXION_POLICY_DOCS,
+    "rag_documents": ATENXION_RAG_DOCUMENTS,
 }
 _UNSET = object()
 
@@ -78,6 +80,10 @@ class CallCenterDataRepository:
         records = await self._find_many("policy_docs")
         return records or deepcopy(ATENXION_POLICY_DOCS)
 
+    async def rag_documents(self) -> list[dict[str, Any]]:
+        records = await self._find_many("rag_documents")
+        return records or deepcopy(ATENXION_RAG_DOCUMENTS)
+
     async def _find_one(self, collection_name: str, query: dict[str, Any]) -> dict[str, Any] | None:
         if self.db is None:
             return None
@@ -109,4 +115,6 @@ def _record_identity(collection_name: str, record: dict[str, Any]) -> dict[str, 
         return {"code": record["code"]}
     if collection_name == "policy_docs":
         return {"id": record["id"]}
+    if collection_name == "rag_documents":
+        return {"document_id": record["document_id"]}
     return record

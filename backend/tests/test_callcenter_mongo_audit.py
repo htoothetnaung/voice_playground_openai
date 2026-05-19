@@ -3,8 +3,8 @@ from typing import Any
 
 import pytest
 
-from app.agents.callcenter.data_repository import CallCenterDataRepository
-from app.agents.callcenter.mock_data import ATENXION_CUSTOMER_PROFILE
+from app.agents.callcenter.data_repository import CallCenterDataRepository, MOCK_DATA_COLLECTIONS
+from app.agents.callcenter.mock_data import ATENXION_CUSTOMER_PROFILE, ATENXION_RAG_DOCUMENTS
 from app.agents.callcenter.session_audit import SessionAuditLogger
 
 try:
@@ -40,6 +40,12 @@ class FakeDb:
         self.session_events = FakeCollection()
         self.session_transcripts = FakeCollection()
         self.session_tickets = FakeCollection()
+        self.collections: dict[str, FakeCollection] = {}
+
+    def __getitem__(self, collection_name: str) -> FakeCollection:
+        if collection_name not in self.collections:
+            self.collections[collection_name] = FakeCollection()
+        return self.collections[collection_name]
 
 
 @pytest.mark.asyncio
@@ -50,6 +56,30 @@ async def test_mongo_repository_falls_back_to_mock_customer_profile() -> None:
 
     assert profile["account_id"] == ATENXION_CUSTOMER_PROFILE["account_id"]
     assert profile["phone_number"] == ATENXION_CUSTOMER_PROFILE["phone_number"]
+
+
+def test_rag_documents_are_additive_and_preserve_canonical_customer() -> None:
+    assert ATENXION_CUSTOMER_PROFILE["account_id"] == "ATX-204871"
+    assert ATENXION_CUSTOMER_PROFILE["phone_number"] == "09661200650"
+    assert len(ATENXION_RAG_DOCUMENTS) == 1000
+    assert "rag_documents" in MOCK_DATA_COLLECTIONS
+
+
+@pytest.mark.asyncio
+async def test_seed_mock_data_upserts_rag_documents_without_deleting_existing_records() -> None:
+    db = FakeDb()
+    repository = CallCenterDataRepository(db=db)
+
+    seeded = await repository.seed_mock_data()
+
+    assert seeded is True
+    rag_collection = db.collections["rag_documents"]
+    assert len(rag_collection.updated) == len(ATENXION_RAG_DOCUMENTS)
+    first_query, first_update, first_upsert = rag_collection.updated[0]
+    assert first_query == {"document_id": ATENXION_RAG_DOCUMENTS[0]["document_id"]}
+    assert first_update["$set"]["document_id"] == ATENXION_RAG_DOCUMENTS[0]["document_id"]
+    assert first_upsert is True
+    assert rag_collection.inserted == []
 
 
 @pytest.mark.asyncio

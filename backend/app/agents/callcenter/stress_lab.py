@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from openai import AsyncOpenAI
 
+from app.agents.callcenter.tools import _search_atenxion_vector_store
 from app.agents.callcenter.cascaded.events import serialize
 from app.core.config import Settings
 from app.core.mongo import get_mongo_database
@@ -298,6 +299,17 @@ def _scenario_registry() -> dict[str, StressScenario]:
             required_config=("STRESS_LAB_VECTOR_STORE_ID",),
         ),
         StressScenario(
+            id="openai_vector_store_direct_search",
+            label="OpenAI Vector Store Direct Search",
+            kind="hosted_openai_tool",
+            provider="openai",
+            expected_output="Direct vector store search over the Atenxion RAG corpus.",
+            timeout_ms=30000,
+            handler=_openai_vector_store_direct_search,
+            requires_real_openai_tools=True,
+            required_config=("CALLCENTER_RAG_VECTOR_STORE_ID",),
+        ),
+        StressScenario(
             id="openai_code_interpreter_billing_analysis",
             label="OpenAI Code Interpreter Billing Analysis",
             kind="hosted_openai_tool",
@@ -423,6 +435,31 @@ async def _openai_file_search(ctx: StressScenarioContext) -> dict[str, Any]:
         tools=[tool],
         input_text="Find the most relevant Atenxion support policy for a disputed roaming charge.",
     )
+
+
+async def _openai_vector_store_direct_search(ctx: StressScenarioContext) -> dict[str, Any]:
+    assert ctx.client is not None
+    async with _timed_tool("vector_store_search", "openai") as call:
+        output = await _search_atenxion_vector_store(
+            ctx.client,
+            ctx.settings.callcenter_rag_vector_store_id or "",
+            query="Find supervisor policy for roaming charge goodwill exceptions.",
+            max_num_results=5,
+            topic="goodwill_credit",
+            service_type="billing",
+        )
+        results = output.get("results", [])
+        call["payload_size_bytes"] = _payload_size(results)
+        call["metadata"] = {
+            "vector_store_id": ctx.settings.callcenter_rag_vector_store_id,
+            "result_count": len(results),
+            "has_more": bool(output.get("has_more", False)),
+            "search_latency_ms": output.get("latency_ms", 0),
+        }
+    return {
+        "tool_calls": [call],
+        "output": call["metadata"],
+    }
 
 
 async def _openai_code_interpreter(ctx: StressScenarioContext) -> dict[str, Any]:

@@ -16,3 +16,4 @@ def test_callcenter_scenario_metadata() -> None:
     assert payload["company_name"] == "Atenxion"
     assert "callcenteragent" in payload["agents"]
     assert "billingAgent" in payload["agents"]
+    assert "searchAtenxionKnowledgeBase" in payload["tools"]["supervisor"]

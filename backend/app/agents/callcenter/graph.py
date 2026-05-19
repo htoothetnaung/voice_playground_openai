@@ -29,6 +29,7 @@ from app.agents.callcenter.tools import (
     reboot_device_workflow,
     run_line_diagnostics,
     schedule_technician,
+    search_atenxion_knowledge_base,
     submit_cancellation_request,
     verify_caller,
 )
@@ -99,6 +100,7 @@ def build_callcenter_agent_map(model: str | None = None) -> dict[str, Agent[Call
         tools=[
             *shared_tools,
             lookup_policy_document,
+            search_atenxion_knowledge_base,
             approve_exception,
             escalation_decision,
         ],

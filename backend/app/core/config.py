@@ -97,6 +97,10 @@ class Settings(BaseSettings):
         default=None,
         alias="STRESS_LAB_VECTOR_STORE_ID",
     )
+    callcenter_rag_vector_store_id: str | None = Field(
+        default=None,
+        alias="CALLCENTER_RAG_VECTOR_STORE_ID",
+    )
     mongodb_uri: str = Field(default="mongodb://127.0.0.1:27017", alias="MONGODB_URI")
     mongodb_db: str = Field(default="atenxion_callcenter", alias="MONGODB_DB")
 
