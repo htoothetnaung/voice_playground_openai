@@ -104,6 +104,12 @@ async def scenario_metadata() -> dict[str, Any]:
                 "approveException",
                 "escalationDecision",
             ],
+            "mcp_workflow": [
+                "searchGmailCustomerHistory",
+                "sendCustomerFollowupEmailViaMcp",
+                "searchCustomerTicketsViaMcp",
+                "createCustomerTicketViaMcp",
+            ],
         },
     }
 

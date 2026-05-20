@@ -12,6 +12,9 @@ def _settings(tmp_path, **overrides) -> Settings:
         "STRESS_LAB_ENABLED": False,
         "STRESS_LAB_REAL_OPENAI_TOOLS_ENABLED": False,
         "CALLCENTER_RAG_VECTOR_STORE_ID": "",
+        "MCP_GMAIL_OAUTH_TOKEN": "",
+        "MCP_EMAIL_SERVER_URL": "",
+        "MCP_TICKETING_SERVER_URL": "",
         "STRESS_LAB_RESULTS_PATH": str(tmp_path / "stress_runs.json"),
     }
     defaults.update(overrides)
@@ -42,6 +45,13 @@ def test_stress_lab_hosted_tools_skip_without_real_tool_opt_in(tmp_path) -> None
     assert all(scenario["enabled"] is True for scenario in telecom)
     assert all("STRESS_LAB_REAL_OPENAI_TOOLS_ENABLED" in scenario["skip_reason"] for scenario in hosted)
     assert any(scenario["id"] == "openai_vector_store_direct_search" for scenario in hosted)
+    mcp = [scenario for scenario in scenarios if scenario["kind"] == "hosted_openai_mcp"]
+    assert {scenario["id"] for scenario in mcp} >= {
+        "openai_mcp_gmail_customer_history",
+        "openai_mcp_customer_email_followup",
+        "openai_mcp_customer_ticketing",
+    }
+    assert all(scenario["enabled"] is False for scenario in mcp)
 
 
 @pytest.mark.asyncio
@@ -107,3 +117,20 @@ async def test_stress_lab_direct_vector_search_skips_without_vector_store_id(tmp
     assert run["status"] == "skipped"
     assert run["summary"]["skipped_count"] == 1
     assert "CALLCENTER_RAG_VECTOR_STORE_ID" in run["results"][0]["skip_reason"]
+
+
+@pytest.mark.asyncio
+async def test_stress_lab_mcp_email_scenario_skips_without_server(tmp_path) -> None:
+    """Remote MCP email benchmarks require an explicitly configured trusted server."""
+    settings = _settings(
+        tmp_path,
+        STRESS_LAB_ENABLED=True,
+        STRESS_LAB_REAL_OPENAI_TOOLS_ENABLED=True,
+    )
+    service = StressLabService(settings, store=StressLabStore(settings, db=None))
+
+    run = await service.run(scenario_ids=["openai_mcp_customer_email_followup"])
+
+    assert run["status"] == "skipped"
+    assert run["summary"]["skipped_count"] == 1
+    assert "MCP_EMAIL_SERVER_URL" in run["results"][0]["skip_reason"]

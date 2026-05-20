@@ -17,3 +17,5 @@ def test_callcenter_scenario_metadata() -> None:
     assert "callcenteragent" in payload["agents"]
     assert "billingAgent" in payload["agents"]
     assert "searchAtenxionKnowledgeBase" in payload["tools"]["supervisor"]
+    assert "sendCustomerFollowupEmailViaMcp" in payload["tools"]["mcp_workflow"]
+    assert "createCustomerTicketViaMcp" in payload["tools"]["mcp_workflow"]

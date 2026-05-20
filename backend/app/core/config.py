@@ -101,6 +101,22 @@ class Settings(BaseSettings):
         default=None,
         alias="CALLCENTER_RAG_VECTOR_STORE_ID",
     )
+    mcp_gmail_oauth_token: str | None = Field(default=None, alias="MCP_GMAIL_OAUTH_TOKEN")
+    mcp_gmail_require_approval: str = Field(default="always", alias="MCP_GMAIL_REQUIRE_APPROVAL")
+    mcp_email_server_url: str | None = Field(default=None, alias="MCP_EMAIL_SERVER_URL")
+    mcp_email_authorization: str | None = Field(default=None, alias="MCP_EMAIL_AUTHORIZATION")
+    mcp_email_allowed_tools_raw: str = Field(
+        default="send_email,send_message,create_draft",
+        alias="MCP_EMAIL_ALLOWED_TOOLS",
+    )
+    mcp_email_require_approval: str = Field(default="always", alias="MCP_EMAIL_REQUIRE_APPROVAL")
+    mcp_ticketing_server_url: str | None = Field(default=None, alias="MCP_TICKETING_SERVER_URL")
+    mcp_ticketing_authorization: str | None = Field(default=None, alias="MCP_TICKETING_AUTHORIZATION")
+    mcp_ticketing_allowed_tools_raw: str = Field(
+        default="search_tickets,create_ticket,update_ticket,add_comment",
+        alias="MCP_TICKETING_ALLOWED_TOOLS",
+    )
+    mcp_ticketing_require_approval: str = Field(default="always", alias="MCP_TICKETING_REQUIRE_APPROVAL")
     mongodb_uri: str = Field(default="mongodb://127.0.0.1:27017", alias="MONGODB_URI")
     mongodb_db: str = Field(default="atenxion_callcenter", alias="MONGODB_DB")
 

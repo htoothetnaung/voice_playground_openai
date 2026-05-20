@@ -16,6 +16,7 @@ from app.agents.callcenter.tools import (
     approve_exception,
     check_service_outage,
     compare_plans,
+    create_customer_ticket_via_mcp,
     create_case,
     escalation_decision,
     explain_charge_breakdown,
@@ -29,7 +30,10 @@ from app.agents.callcenter.tools import (
     reboot_device_workflow,
     run_line_diagnostics,
     schedule_technician,
+    search_customer_tickets_via_mcp,
     search_atenxion_knowledge_base,
+    search_gmail_customer_history,
+    send_customer_followup_email_via_mcp,
     submit_cancellation_request,
     verify_caller,
 )
@@ -45,6 +49,12 @@ def build_callcenter_realtime_agents() -> dict[str, RealtimeAgent[CallCenterCont
         lookup_active_services,
         create_case,
         add_case_note,
+    ]
+    mcp_workflow_tools = [
+        search_gmail_customer_history,
+        send_customer_followup_email_via_mcp,
+        search_customer_tickets_via_mcp,
+        create_customer_ticket_via_mcp,
     ]
 
     callcenter_agent = RealtimeAgent[CallCenterContext](
@@ -121,6 +131,7 @@ def build_callcenter_realtime_agents() -> dict[str, RealtimeAgent[CallCenterCont
             search_atenxion_knowledge_base,
             approve_exception,
             escalation_decision,
+            *mcp_workflow_tools,
         ],
         handoffs=[],
     )
@@ -132,7 +143,7 @@ def build_callcenter_realtime_agents() -> dict[str, RealtimeAgent[CallCenterCont
             "escalation requests."
         ),
         instructions=HUMAN_ESCALATION_AGENT_PROMPT,
-        tools=[*shared_tools],
+        tools=[*shared_tools, *mcp_workflow_tools],
         handoffs=[],
     )
 

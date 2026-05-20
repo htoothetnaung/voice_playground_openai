@@ -75,7 +75,15 @@ type StressRun = {
 const kindLabels: Record<string, string> = {
   realistic_telecom: "Telecom simulation",
   hosted_openai_tool: "Hosted OpenAI tool",
+  hosted_openai_mcp: "MCP connector/server",
 };
+
+const kindFilters = [
+  { id: "all", label: "All" },
+  { id: "realistic_telecom", label: "Telecom" },
+  { id: "hosted_openai_tool", label: "OpenAI" },
+  { id: "hosted_openai_mcp", label: "MCP" },
+];
 
 function formatMs(value?: number) {
   if (typeof value !== "number") return "0 ms";
@@ -248,15 +256,15 @@ export default function StressLabPage() {
                 </button>
               </div>
 
-              <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
-                {["all", "realistic_telecom", "hosted_openai_tool"].map((kind) => (
+              <div className="mt-4 grid grid-cols-4 gap-2 text-sm">
+                {kindFilters.map((kind) => (
                   <button
-                    key={kind}
+                    key={kind.id}
                     type="button"
-                    onClick={() => setKindFilter(kind)}
-                    className={`rounded-md border px-2 py-2 font-medium ${kindFilter === kind ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600"}`}
+                    onClick={() => setKindFilter(kind.id)}
+                    className={`rounded-md border px-2 py-2 font-medium ${kindFilter === kind.id ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600"}`}
                   >
-                    {kind === "all" ? "All" : kind === "realistic_telecom" ? "Telecom" : "OpenAI"}
+                    {kind.label}
                   </button>
                 ))}
               </div>

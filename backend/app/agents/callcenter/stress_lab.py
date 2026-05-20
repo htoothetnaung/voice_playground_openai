@@ -15,8 +15,14 @@ from uuid import uuid4
 
 from openai import AsyncOpenAI
 
-from app.agents.callcenter.tools import _search_atenxion_vector_store
 from app.agents.callcenter.cascaded.events import serialize
+from app.agents.callcenter.mcp_integrations import (
+    gmail_connector_tool,
+    remote_email_tool,
+    remote_ticketing_tool,
+    run_mcp_response,
+)
+from app.agents.callcenter.tools import _search_atenxion_vector_store
 from app.core.config import Settings
 from app.core.mongo import get_mongo_database
 
@@ -339,6 +345,39 @@ def _scenario_registry() -> dict[str, StressScenario]:
             handler=_openai_image_generation,
             requires_real_openai_tools=True,
         ),
+        StressScenario(
+            id="openai_mcp_gmail_customer_history",
+            label="OpenAI MCP Gmail Customer History",
+            kind="hosted_openai_mcp",
+            provider="openai_mcp_connector",
+            expected_output="Responses API MCP call through the official Gmail connector for read/search workflow context.",
+            timeout_ms=30000,
+            handler=_openai_mcp_gmail_customer_history,
+            requires_real_openai_tools=True,
+            required_config=("MCP_GMAIL_OAUTH_TOKEN",),
+        ),
+        StressScenario(
+            id="openai_mcp_customer_email_followup",
+            label="OpenAI MCP Customer Email Follow-up",
+            kind="hosted_openai_mcp",
+            provider="openai_mcp_remote",
+            expected_output="Responses API MCP call against a configured trusted email server for send/draft workflow testing.",
+            timeout_ms=30000,
+            handler=_openai_mcp_customer_email_followup,
+            requires_real_openai_tools=True,
+            required_config=("MCP_EMAIL_SERVER_URL",),
+        ),
+        StressScenario(
+            id="openai_mcp_customer_ticketing",
+            label="OpenAI MCP Customer Ticketing",
+            kind="hosted_openai_mcp",
+            provider="openai_mcp_remote",
+            expected_output="Responses API MCP call against a configured Zendesk or Zoho Desk style ticketing server.",
+            timeout_ms=30000,
+            handler=_openai_mcp_customer_ticketing,
+            requires_real_openai_tools=True,
+            required_config=("MCP_TICKETING_SERVER_URL",),
+        ),
     ]
     return {scenario.id: scenario for scenario in scenarios}
 
@@ -493,6 +532,55 @@ async def _openai_image_generation(ctx: StressScenarioContext) -> dict[str, Any]
     )
 
 
+async def _openai_mcp_gmail_customer_history(ctx: StressScenarioContext) -> dict[str, Any]:
+    assert ctx.client is not None
+    tool = gmail_connector_tool(ctx.settings)
+    if tool is None:
+        return {"tool_calls": [], "output": {"available": False}}
+    return await _mcp_tool_call(
+        ctx,
+        tool_name="mcp_gmail_customer_history",
+        tool=tool,
+        input_text=(
+            "Use the Gmail connector to search for recent customer-support messages from "
+            "alex.johnson@email.com about billing or roaming. Return a compact summary."
+        ),
+    )
+
+
+async def _openai_mcp_customer_email_followup(ctx: StressScenarioContext) -> dict[str, Any]:
+    assert ctx.client is not None
+    tool = remote_email_tool(ctx.settings)
+    if tool is None:
+        return {"tool_calls": [], "output": {"available": False}}
+    return await _mcp_tool_call(
+        ctx,
+        tool_name="mcp_customer_email_followup",
+        tool=tool,
+        input_text=(
+            "Use the configured customer email MCP server to draft or send a follow-up email to "
+            "alex.johnson@email.com for case CASE-ATX-204871-01. Subject: Atenxion support follow-up. "
+            "Body: Thanks for calling Atenxion. We documented the billing concern and will follow up with next steps."
+        ),
+    )
+
+
+async def _openai_mcp_customer_ticketing(ctx: StressScenarioContext) -> dict[str, Any]:
+    assert ctx.client is not None
+    tool = remote_ticketing_tool(ctx.settings)
+    if tool is None:
+        return {"tool_calls": [], "output": {"available": False}}
+    return await _mcp_tool_call(
+        ctx,
+        tool_name="mcp_customer_ticketing",
+        tool=tool,
+        input_text=(
+            "Use the configured customer ticketing MCP server to search or create a complaint ticket for "
+            "account ATX-204871 about disputed roaming charges and a requested goodwill review."
+        ),
+    )
+
+
 async def _responses_tool_call(
     ctx: StressScenarioContext,
     *,
@@ -523,6 +611,38 @@ async def _responses_tool_call(
             "output_item_count": len(output_items),
             "output_item_types": call["metadata"]["output_item_types"],
         },
+    }
+
+
+async def _mcp_tool_call(
+    ctx: StressScenarioContext,
+    *,
+    tool_name: str,
+    tool: dict[str, Any],
+    input_text: str,
+) -> dict[str, Any]:
+    assert ctx.client is not None
+    async with _timed_tool(tool_name, "openai_mcp") as call:
+        output = await run_mcp_response(
+            ctx.client,
+            ctx.settings,
+            tool_name=tool_name,
+            tool=tool,
+            input_text=input_text,
+            model=ctx.settings.stress_lab_openai_model,
+        )
+        call["payload_size_bytes"] = _payload_size(output)
+        call["metadata"] = {
+            "server_label": output.get("server_label"),
+            "connector_id": output.get("connector_id"),
+            "allowed_tools": output.get("allowed_tools", []),
+            "output_item_types": output.get("output_item_types", []),
+            "approval_required": output.get("approval_required", False),
+            "mcp_call_count": output.get("mcp_call_count", 0),
+        }
+    return {
+        "tool_calls": [call],
+        "output": output,
     }
 
 
