@@ -7,6 +7,10 @@ from typing import Any
 from agents import RunContextWrapper, function_tool
 from openai import AsyncOpenAI
 
+from app.agents.callcenter.bank_tool import (
+    ATENXION_BANK_TOOL_NAME,
+    fetch_atenxion_bank_transactions,
+)
 from app.agents.callcenter.context import CallCenterContext
 from app.agents.callcenter.data_repository import CallCenterDataRepository
 from app.agents.callcenter.mcp_integrations import (
@@ -375,6 +379,24 @@ async def get_latest_bill(
         "requested_account_id": account_id,
         **latest_bill,
     }
+
+
+@function_tool(name_override=ATENXION_BANK_TOOL_NAME)
+async def atenxion_bank_tool(
+    ctx: RunContextWrapper[CallCenterContext],
+    user_id: str,
+) -> dict:
+    """
+    Retrieve completed Atenxion Bank transaction details by user ID.
+
+    Important tool-calling rule:
+    - Before calling this tool, you must know the bank user ID.
+    - If the caller asks about bank transactions but has not provided a user ID, ask a follow-up question first.
+    - Do not guess missing required fields.
+    """
+    if not _is_verified(ctx):
+        return _verification_required()
+    return await fetch_atenxion_bank_transactions(_settings(), user_id=user_id)
 
 
 @function_tool

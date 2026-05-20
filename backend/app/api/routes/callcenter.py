@@ -82,6 +82,7 @@ async def scenario_metadata() -> dict[str, Any]:
             ],
             "billing": [
                 "getLatestBill",
+                "Atenxion-bank-tool",
                 "explainChargeBreakdown",
                 "offerPaymentArrangement",
                 "applyGoodwillCredit",
@@ -101,6 +102,7 @@ async def scenario_metadata() -> dict[str, Any]:
             "supervisor": [
                 "lookupPolicyDocument",
                 "searchAtenxionKnowledgeBase",
+                "Atenxion-bank-tool",
                 "approveException",
                 "escalationDecision",
             ],
@@ -109,6 +111,9 @@ async def scenario_metadata() -> dict[str, Any]:
                 "sendCustomerFollowupEmailViaMcp",
                 "searchCustomerTicketsViaMcp",
                 "createCustomerTicketViaMcp",
+            ],
+            "external_api": [
+                "Atenxion-bank-tool",
             ],
         },
     }

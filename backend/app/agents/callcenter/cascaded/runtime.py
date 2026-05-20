@@ -106,6 +106,7 @@ class CallCenterCascadedRuntime:
         self._active_stt_metrics: TurnMetrics | None = None
         self._response_task: asyncio.Task[None] | None = None
         self._ptt_audio_buffer: bytearray | None = None
+        self._tool_call_names: dict[str, str] = {}
 
     async def serve(self, websocket: WebSocket, agent_name: str | None = None) -> None:
         """Own the lifetime of one WebSocket session, initialize provider or SDK state, and coordinate reader and writer tasks."""
@@ -760,20 +761,28 @@ class CallCenterCascadedRuntime:
         item = getattr(event, "item", None)
         event_name = getattr(event, "name", "")
         if event_name == "tool_called":
+            tool_name = _extract_tool_name(item)
+            call_id = _extract_tool_call_id(item)
+            if call_id and tool_name != "unknown_tool":
+                self._tool_call_names[call_id] = tool_name
             await websocket.send_json(
                 {
                     "type": "tool_start",
                     "agent_name": active_agent_name,
-                    "tool_name": _extract_tool_name(item),
+                    "tool_name": tool_name,
                     "arguments": _extract_tool_arguments(item),
                 }
             )
         elif event_name == "tool_output":
+            call_id = _extract_tool_call_id(item)
+            tool_name = _extract_tool_name(item)
+            if tool_name == "unknown_tool" and call_id:
+                tool_name = self._tool_call_names.get(call_id, tool_name)
             await websocket.send_json(
                 {
                     "type": "tool_end",
                     "agent_name": active_agent_name,
-                    "tool_name": _extract_tool_name(item),
+                    "tool_name": tool_name,
                     "arguments": _extract_tool_arguments(item),
                     "output": serialize(_extract_tool_output(item)),
                 }
@@ -888,6 +897,15 @@ def _direct_handoff_agent_name(
         " billing ",
         " charge",
         " payment",
+        " transaction",
+        " transactions",
+        " bank transaction",
+        " bank transactions",
+        " bank user id",
+        " debit",
+        " debits",
+        " transfer",
+        " transfers",
         " invoice",
         " fee",
         " fees",
@@ -1237,6 +1255,18 @@ def _extract_tool_name(item: Any) -> str:
         or getattr(raw, "name", None)
         or getattr(getattr(raw, "function", None), "name", None)
         or "unknown_tool"
+    )
+
+
+def _extract_tool_call_id(item: Any) -> str:
+    """Read a tool call id from the possible SDK stream item shapes."""
+    raw = getattr(item, "raw_item", None)
+    return str(
+        getattr(item, "call_id", None)
+        or getattr(raw, "call_id", None)
+        or getattr(item, "id", None)
+        or getattr(raw, "id", None)
+        or ""
     )
 
 

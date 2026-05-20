@@ -15,6 +15,10 @@ from uuid import uuid4
 
 from openai import AsyncOpenAI
 
+from app.agents.callcenter.bank_tool import (
+    ATENXION_BANK_TOOL_NAME,
+    fetch_atenxion_bank_transactions,
+)
 from app.agents.callcenter.cascaded.events import serialize
 from app.agents.callcenter.mcp_integrations import (
     gmail_connector_tool,
@@ -378,6 +382,15 @@ def _scenario_registry() -> dict[str, StressScenario]:
             requires_real_openai_tools=True,
             required_config=("MCP_TICKETING_SERVER_URL",),
         ),
+        StressScenario(
+            id="atenxion_bank_transaction_lookup",
+            label="Atenxion Bank Transaction Lookup",
+            kind="external_api_tool",
+            provider="atenxion_bank",
+            expected_output="POST /api/v1/transaction/get-details for the configured Atenxion Bank test user.",
+            timeout_ms=15000,
+            handler=_atenxion_bank_transaction_lookup,
+        ),
     ]
     return {scenario.id: scenario for scenario in scenarios}
 
@@ -579,6 +592,32 @@ async def _openai_mcp_customer_ticketing(ctx: StressScenarioContext) -> dict[str
             "account ATX-204871 about disputed roaming charges and a requested goodwill review."
         ),
     )
+
+
+async def _atenxion_bank_transaction_lookup(ctx: StressScenarioContext) -> dict[str, Any]:
+    async with _timed_tool(ATENXION_BANK_TOOL_NAME, "atenxion_bank") as call:
+        output = await fetch_atenxion_bank_transactions(
+            ctx.settings,
+            user_id=ctx.settings.atenxion_bank_test_user_id,
+        )
+        call["payload_size_bytes"] = _payload_size(output)
+        call["metadata"] = {
+            "status_code": output.get("status_code"),
+            "user_id": output.get("user_id"),
+            "transaction_count": output.get("transaction_count", 0),
+            "credit_count": output.get("credit_count", 0),
+            "debit_count": output.get("debit_count", 0),
+            "api_latency_ms": output.get("latency_ms", 0),
+        }
+        if output.get("status_code") != 200:
+            raise RuntimeError(
+                f"Atenxion Bank API returned HTTP {output.get('status_code')}: {output.get('reason')}"
+            )
+    return {
+        "tool_calls": [call],
+        "output": output,
+        "latency_ms": {"atenxion_bank_api": output.get("latency_ms", 0)},
+    }
 
 
 async def _responses_tool_call(

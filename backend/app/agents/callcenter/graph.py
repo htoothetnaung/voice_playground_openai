@@ -13,6 +13,7 @@ from app.agents.callcenter.prompts import (
 from app.agents.callcenter.tools import (
     add_case_note,
     apply_goodwill_credit,
+    atenxion_bank_tool,
     approve_exception,
     check_service_outage,
     compare_plans,
@@ -68,6 +69,7 @@ def build_callcenter_agent_map(model: str | None = None) -> dict[str, Agent[Call
         tools=[
             *shared_tools,
             get_latest_bill,
+            atenxion_bank_tool,
             explain_charge_breakdown,
             offer_payment_arrangement,
             apply_goodwill_credit,
@@ -111,6 +113,7 @@ def build_callcenter_agent_map(model: str | None = None) -> dict[str, Agent[Call
             *shared_tools,
             lookup_policy_document,
             search_atenxion_knowledge_base,
+            atenxion_bank_tool,
             approve_exception,
             escalation_decision,
             *mcp_workflow_tools,
@@ -122,7 +125,7 @@ def build_callcenter_agent_map(model: str | None = None) -> dict[str, Agent[Call
         instructions=HUMAN_ESCALATION_AGENT_PROMPT,
         handoff_description="Atenxion live-escalation style specialist for upset callers or explicit human escalation requests.",
         **_agent_kwargs(model),
-        tools=[*shared_tools, *mcp_workflow_tools],
+        tools=[*shared_tools, atenxion_bank_tool, *mcp_workflow_tools],
     )
 
     callcenter_agent: Agent[CallCenterContext] = Agent(

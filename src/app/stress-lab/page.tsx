@@ -76,6 +76,7 @@ const kindLabels: Record<string, string> = {
   realistic_telecom: "Telecom simulation",
   hosted_openai_tool: "Hosted OpenAI tool",
   hosted_openai_mcp: "MCP connector/server",
+  external_api_tool: "External API tool",
 };
 
 const kindFilters = [
@@ -83,6 +84,7 @@ const kindFilters = [
   { id: "realistic_telecom", label: "Telecom" },
   { id: "hosted_openai_tool", label: "OpenAI" },
   { id: "hosted_openai_mcp", label: "MCP" },
+  { id: "external_api_tool", label: "External API" },
 ];
 
 function formatMs(value?: number) {

@@ -52,6 +52,9 @@ def test_stress_lab_hosted_tools_skip_without_real_tool_opt_in(tmp_path) -> None
         "openai_mcp_customer_ticketing",
     }
     assert all(scenario["enabled"] is False for scenario in mcp)
+    external_api = [scenario for scenario in scenarios if scenario["kind"] == "external_api_tool"]
+    assert {scenario["id"] for scenario in external_api} >= {"atenxion_bank_transaction_lookup"}
+    assert all(scenario["enabled"] is True for scenario in external_api)
 
 
 @pytest.mark.asyncio

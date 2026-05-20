@@ -35,6 +35,7 @@ class FakeWebSocket:
 
 class FakeRawToolCall:
     """Test double for SDK raw tool-call item data."""
+    call_id = "call-1"
     name = "lookup_customer_profile"
     arguments = '{"phone_number":"+15551234567"}'
 
@@ -47,6 +48,17 @@ class FakeToolCallItem:
 class FakeToolOutputItem:
     """Test double for SDK tool output items emitted by streaming events."""
     raw_item = FakeRawToolCall()
+    output = {"found": True}
+
+
+class FakeRawToolOutputWithoutName:
+    """Test double for SDK tool output items that only carry a call id."""
+    call_id = "call-1"
+
+
+class FakeToolOutputItemWithoutName:
+    """Test double for SDK tool output items with no repeated tool name."""
+    raw_item = FakeRawToolOutputWithoutName()
     output = {"found": True}
 
 
@@ -94,6 +106,27 @@ async def test_cascaded_runtime_normalizes_tool_events() -> None:
     assert websocket.messages[0]["tool_name"] == "lookup_customer_profile"
     assert websocket.messages[1]["type"] == "tool_end"
     assert websocket.messages[1]["output"] == {"found": True}
+
+
+@pytest.mark.asyncio
+async def test_cascaded_runtime_uses_prior_tool_call_name_for_outputs_without_name() -> None:
+    """The frontend should not show unknown_tool when the SDK output event only has a call id."""
+    runtime = CallCenterCascadedRuntime(Settings(OPENAI_API_KEY="sk-test"))
+    websocket = FakeWebSocket()
+
+    await runtime._send_run_item_event(
+        websocket,
+        FakeRunItemEvent("tool_called", FakeToolCallItem()),
+        "callcenteragent",
+    )
+    await runtime._send_run_item_event(
+        websocket,
+        FakeRunItemEvent("tool_output", FakeToolOutputItemWithoutName()),
+        "callcenteragent",
+    )
+
+    assert websocket.messages[1]["type"] == "tool_end"
+    assert websocket.messages[1]["tool_name"] == "lookup_customer_profile"
 
 
 @pytest.mark.asyncio

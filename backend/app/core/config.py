@@ -117,6 +117,19 @@ class Settings(BaseSettings):
         alias="MCP_TICKETING_ALLOWED_TOOLS",
     )
     mcp_ticketing_require_approval: str = Field(default="always", alias="MCP_TICKETING_REQUIRE_APPROVAL")
+    atenxion_bank_api_base_url: str = Field(
+        default="https://api-qabank.atenxion.ai",
+        alias="ATENXION_BANK_API_BASE_URL",
+    )
+    atenxion_bank_api_token: str | None = Field(default=None, alias="ATENXION_BANK_API_TOKEN")
+    atenxion_bank_test_user_id: str = Field(
+        default="6a0d6b143cac1525e1e4ce87",
+        alias="ATENXION_BANK_TEST_USER_ID",
+    )
+    atenxion_bank_timeout_seconds: float = Field(
+        default=10.0,
+        alias="ATENXION_BANK_TIMEOUT_SECONDS",
+    )
     mongodb_uri: str = Field(default="mongodb://127.0.0.1:27017", alias="MONGODB_URI")
     mongodb_db: str = Field(default="atenxion_callcenter", alias="MONGODB_DB")
 
