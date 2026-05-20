@@ -45,6 +45,24 @@ def test_normalize_for_tts_expands_common_numeric_text() -> None:
     assert "1 2 3 4 5" in text
 
 
+def test_normalize_for_tts_suppresses_long_backend_identifiers() -> None:
+    """Long backend IDs should not be read aloud while phones and money still are."""
+    text = normalize_for_tts(
+        "I checked user ID 6a0d6b143cac1525e1e4ce87. "
+        "Transaction id 507f1f77bcf86cd799439012 is complete. "
+        "Call 09661200650 about $146.32, not reference 12345678901234567890."
+    )
+
+    assert "6a0d6b143cac1525e1e4ce87" not in text
+    assert "507f1f77bcf86cd799439012" not in text
+    assert "the user ID you provided" in text
+    assert "the transaction ID" in text
+    assert "0 9 6 6 1 2 0 0 6 5 0" in text
+    assert "146 dollars and 32 cents" in text
+    assert "12345678901234567890" not in text
+    assert "the long ID" in text
+
+
 @pytest.mark.asyncio
 async def test_elevenlabs_adapter_streams_pcm_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""

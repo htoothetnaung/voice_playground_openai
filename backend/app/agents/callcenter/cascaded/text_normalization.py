@@ -1,4 +1,4 @@
-"""Expands money, dates, phone numbers, and long digit sequences into speech-friendly text."""
+"""Expands call-center numerics and suppresses long backend identifiers for TTS."""
 
 from __future__ import annotations
 
@@ -27,6 +27,14 @@ def normalize_for_tts(text: str) -> str:
     text = re.sub(r"\$(\d+(?:\.\d{1,2})?)", _money_replacement, text)
     text = re.sub(r"\b(\d{4})-(\d{2})-(\d{2})\b", _date_replacement, text)
     text = re.sub(r"\b(\d{3})[-.](\d{3})[-.](\d{4})\b", _phone_replacement, text)
+    text = re.sub(
+        r"\b(bank user id|user id|user_id|userid|account id|account_id|transaction id|transaction_id)"
+        r"(\s+(?:is|as))?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9_-]{7,})\b",
+        _labeled_identifier_replacement,
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"\b(?=[A-Za-z0-9_-]{12,}\b)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]+\b", "the ID", text)
     text = re.sub(r"\b(\d{4,})\b", _digit_sequence_replacement, text)
     return text
 
@@ -58,10 +66,22 @@ def _phone_replacement(match: re.Match[str]) -> str:
     return " ".join(" ".join(group) for group in match.groups())
 
 
+def _labeled_identifier_replacement(match: re.Match[str]) -> str:
+    """Replace labeled backend identifiers with a short speakable reference."""
+    label = match.group(1).replace("_", " ").lower()
+    if "user" in label:
+        return "the user ID you provided"
+    if "transaction" in label:
+        return "the transaction ID"
+    return f"the {label}"
+
+
 def _digit_sequence_replacement(match: re.Match[str]) -> str:
-    """Spell out long digit sequences while preserving likely year values."""
+    """Spell out phone-sized values while suppressing very long identifier-like numbers."""
     value = match.group(1)
     if len(value) == 4 and value.startswith("20"):
         return value
+    if len(value) >= 13:
+        return "the long ID"
     return " ".join(value)
 
