@@ -1,0 +1,678 @@
+"""Implements account lookup, verification, billing, technical support, retention, supervisor, and case-management tool behavior over mock data."""
+from datetime import datetime
+import re
+from time import monotonic
+from typing import Any
+
+from google.adk.tools import ToolContext
+from openai import AsyncOpenAI
+
+from app.agents.callcenter.data_repository import CallCenterDataRepository
+from app.core.config import Settings, get_settings
+
+_DATE_FORMATS = (
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%m/%d/%Y",
+    "%m-%d-%Y",
+    "%d/%m/%Y",
+    "%d-%m-%Y",
+    "%d %B %Y",
+    "%d %b %Y",
+    "%B %d %Y",
+    "%b %d %Y",
+    "%B %d, %Y",
+    "%b %d, %Y",
+)
+
+
+def create_case_id(prefix: str) -> str:
+    """Create deterministic demo case or work-order identifiers tied to the mock Atenxion account."""
+    return f"{prefix}-ATX-204871-01"
+
+
+def _repository() -> CallCenterDataRepository:
+    """Create the data repository used by async tool functions."""
+    return CallCenterDataRepository()
+
+
+def _settings() -> Settings:
+    return get_settings()
+
+
+def _openai_client(settings: Settings) -> AsyncOpenAI:
+    if not settings.openai_api_key:
+        raise RuntimeError("OPENAI_API_KEY is not configured for optional vector-store search.")
+    return AsyncOpenAI(api_key=settings.openai_api_key)
+
+
+class _StateContextProxy:
+    """Expose ADK session state with the attribute shape the original tools used."""
+
+    _defaults = {
+        "verified": False,
+        "greeted": False,
+        "current_agent_name": None,
+        "active_account_id": None,
+        "case_id": None,
+        "case_notes": list,
+    }
+
+    def __init__(self, state: dict[str, Any]) -> None:
+        object.__setattr__(self, "_state", state)
+
+    def __getattr__(self, name: str) -> Any:
+        state = object.__getattribute__(self, "_state")
+        if name not in state and name in self._defaults:
+            default = self._defaults[name]
+            state[name] = default() if callable(default) else default
+        try:
+            return state[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        object.__getattribute__(self, "_state")[name] = value
+
+
+def _state_context(tool_context: ToolContext) -> Any:
+    """Return a mutable context-like object for ADK ToolContext or tests."""
+    legacy_context = getattr(tool_context, "context", None)
+    if legacy_context is not None:
+        return legacy_context
+    state = getattr(tool_context, "state", None)
+    if state is None:
+        state = {}
+        setattr(tool_context, "state", state)
+    return _StateContextProxy(state)
+
+
+def _verification_required() -> dict:
+    """Return the standard tool response that prevents account-specific data before caller verification."""
+    return {
+        "authorized": False,
+        "security_status": "verification_required",
+        "next_step": (
+            "Do not provide account-specific details yet. Ask the caller to verify the phone number, "
+            "date of birth, and 4-digit PIN first."
+        ),
+    }
+
+
+def _is_verified(tool_context: ToolContext) -> bool:
+    """Read ADK session state to determine whether account-specific tools may proceed."""
+    return bool(_state_context(tool_context).verified)
+
+
+def _digits_only(value: str) -> str:
+    """Normalize identity fields that may be spoken or typed with separators."""
+    return re.sub(r"\D", "", value or "")
+
+
+def _normalize_date_of_birth(value: str) -> str:
+    """Normalize common typed or spoken DOB formats to the mock record's ISO date."""
+    normalized = re.sub(r"[,]+", " ", value or "").strip()
+    normalized = re.sub(r"\s+", " ", normalized)
+    if not normalized:
+        return ""
+
+    for date_format in _DATE_FORMATS:
+        try:
+            return datetime.strptime(normalized, date_format).date().isoformat()
+        except ValueError:
+            continue
+    return normalized.lower()
+
+
+def _clamp_search_result_count(max_num_results: int) -> int:
+    return max(1, min(int(max_num_results or 5), 50))
+
+
+def _build_vector_store_search_filters(
+    topic: str | None = None,
+    service_type: str | None = None,
+) -> dict[str, Any] | None:
+    filters = []
+    if topic:
+        filters.append({"type": "eq", "key": "topic", "value": topic})
+    if service_type:
+        filters.append({"type": "eq", "key": "service_type", "value": service_type})
+    if not filters:
+        return None
+    if len(filters) == 1:
+        return filters[0]
+    return {"type": "and", "filters": filters}
+
+
+def _build_vector_store_search_payload(
+    query: str,
+    max_num_results: int = 5,
+    topic: str | None = None,
+    service_type: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "query": query,
+        "max_num_results": _clamp_search_result_count(max_num_results),
+        "rewrite_query": True,
+    }
+    filters = _build_vector_store_search_filters(topic=topic, service_type=service_type)
+    if filters:
+        payload["filters"] = filters
+    return payload
+
+
+def _object_to_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    return {}
+
+
+def _normalize_search_results(response: Any, elapsed_ms: float) -> dict[str, Any]:
+    payload = _object_to_dict(response)
+    return _normalize_search_result_items(
+        payload.get("data", []) or [],
+        elapsed_ms,
+        search_query=payload.get("search_query"),
+        has_more=bool(payload.get("has_more", False)),
+    )
+
+
+def _normalize_search_result_items(
+    items: list[Any],
+    elapsed_ms: float,
+    *,
+    search_query: Any = None,
+    has_more: bool = False,
+) -> dict[str, Any]:
+    results = []
+    for item in items:
+        mapped = _object_to_dict(item)
+        snippets = []
+        for content in mapped.get("content", []) or []:
+            content_item = _object_to_dict(content)
+            text = str(content_item.get("text", "")).strip()
+            if text:
+                snippets.append(text[:600])
+        results.append(
+            {
+                "file_id": mapped.get("file_id"),
+                "filename": mapped.get("filename"),
+                "score": mapped.get("score"),
+                "attributes": mapped.get("attributes") or {},
+                "snippets": snippets,
+            }
+        )
+    return {
+        "available": True,
+        "result_count": len(results),
+        "results": results,
+        "search_query": search_query,
+        "has_more": has_more,
+        "latency_ms": round(elapsed_ms, 3),
+    }
+
+
+async def _search_atenxion_vector_store(
+    client: AsyncOpenAI,
+    vector_store_id: str,
+    *,
+    query: str,
+    max_num_results: int = 5,
+    topic: str | None = None,
+    service_type: str | None = None,
+) -> dict[str, Any]:
+    start = monotonic()
+    payload = _build_vector_store_search_payload(
+        query=query,
+        max_num_results=max_num_results,
+        topic=topic,
+        service_type=service_type,
+    )
+    paginator = client.vector_stores.search(vector_store_id, **payload)
+    items = []
+    async for item in paginator:
+        items.append(item)
+    return _normalize_search_result_items(items, (monotonic() - start) * 1000)
+
+
+async def _search_atenxion_knowledge_base_impl(
+    settings: Settings,
+    *,
+    query: str,
+    max_num_results: int = 5,
+    topic: str | None = None,
+    service_type: str | None = None,
+    client: AsyncOpenAI | None = None,
+) -> dict[str, Any]:
+    vector_store_id = settings.callcenter_rag_vector_store_id
+    if not vector_store_id:
+        return {
+            "available": False,
+            "reason": "CALLCENTER_RAG_VECTOR_STORE_ID is not configured.",
+            "results": [],
+            "result_count": 0,
+        }
+    try:
+        return await _search_atenxion_vector_store(
+            client or _openai_client(settings),
+            vector_store_id,
+            query=query,
+            max_num_results=max_num_results,
+            topic=topic,
+            service_type=service_type,
+        )
+    except Exception as exc:
+        return {
+            "available": False,
+            "reason": f"{type(exc).__name__}: {exc}",
+            "results": [],
+            "result_count": 0,
+        }
+
+
+async def lookup_customer_profile(
+    tool_context: ToolContext,
+    phone_number: str,
+) -> dict:
+    """Look up the Atenxion customer profile by phone number."""
+    customer_profile = await _repository().customer_profile()
+    matched = _digits_only(phone_number) == _digits_only(
+        customer_profile["phone_number"]
+    )
+    if matched:
+        _state_context(tool_context).active_account_id = customer_profile["account_id"]
+        return {
+            "found": True,
+            "profile": {
+                "account_id": customer_profile["account_id"],
+                "full_name": customer_profile["full_name"],
+                "phone_number": customer_profile["phone_number"],
+                "service_address": customer_profile["service_address"],
+                "current_plan": customer_profile["current_plan"],
+                "sentiment": customer_profile["sentiment"],
+            },
+        }
+    return {
+        "found": False,
+        "security_status": "account_not_found",
+        "next_step": (
+            "Do not transfer or escalate. Tell the caller there is no customer profile matching "
+            "that phone number in Atenxion's records. Ask them to check their account details "
+            "and call back, then close the call politely."
+        ),
+    }
+
+
+async def verify_caller(
+    tool_context: ToolContext,
+    phone_number: str,
+    date_of_birth: str,
+    pin_last4: str,
+) -> dict:
+    """Verify the caller using phone number, date of birth, and 4-digit PIN."""
+    customer_profile = await _repository().customer_profile()
+    verified = (
+        _digits_only(phone_number)
+        == _digits_only(customer_profile["phone_number"])
+        and _normalize_date_of_birth(date_of_birth)
+        == _normalize_date_of_birth(customer_profile["date_of_birth"])
+        and _digits_only(pin_last4) == _digits_only(customer_profile["pin_last4"])
+    )
+    _state_context(tool_context).verified = verified
+    if verified:
+        _state_context(tool_context).active_account_id = customer_profile["account_id"]
+        return {
+            "verified": True,
+            "account_id": customer_profile["account_id"],
+            "security_status": "passed",
+        }
+    return {
+        "verified": False,
+        "security_status": "failed",
+        "next_step": (
+            "Do not transfer or escalate. Tell the caller the phone number, date of birth, "
+            "or PIN does not match Atenxion's records. Ask them to check their account details "
+            "and call back, then close the call politely."
+        ),
+    }
+
+
+async def lookup_active_services(
+    tool_context: ToolContext,
+    account_id: str,
+) -> dict:
+    """Return the active Atenxion services on an account."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    active_services = await _repository().active_services()
+    return {
+        "requested_account_id": account_id,
+        "services": active_services["services"],
+    }
+
+
+async def create_case(
+    tool_context: ToolContext,
+    reason: str,
+    priority: str,
+    owning_team: str,
+) -> dict:
+    """Create a support case with a team owner and priority."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    case_id = create_case_id("CASE")
+    _state_context(tool_context).case_id = case_id
+    return {
+        "case_id": case_id,
+        "status": "open",
+        "reason": reason,
+        "priority": priority,
+        "owning_team": owning_team,
+    }
+
+
+async def add_case_note(
+    tool_context: ToolContext,
+    case_id: str,
+    note: str,
+    visibility: str,
+) -> dict:
+    """Attach an internal case note to an existing support case."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    _state_context(tool_context).case_notes.append(note)
+    return {
+        "case_id": case_id,
+        "saved": True,
+        "note_preview": note[:140],
+        "visibility": visibility,
+    }
+
+
+async def get_latest_bill(
+    tool_context: ToolContext,
+    account_id: str,
+) -> dict:
+    """Fetch the latest Atenxion bill for an account."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    latest_bill = await _repository().latest_bill()
+    return {
+        "requested_account_id": account_id,
+        **latest_bill,
+    }
+
+
+async def explain_charge_breakdown(
+    tool_context: ToolContext,
+    account_id: str,
+    bill_id: str,
+) -> dict:
+    """Explain the bill line items in plain language."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    return {
+        "requested_account_id": account_id,
+        "bill_id": bill_id,
+        "explanation": [
+            "The bill increased mainly because of international calls and two roaming day passes.",
+            "The base plan stayed the same month over month.",
+            "Device protection and taxes were consistent with the prior bill.",
+        ],
+        "driver_summary": "Usage-based travel charges caused most of the increase.",
+    }
+
+
+async def offer_payment_arrangement(
+    tool_context: ToolContext,
+    account_id: str,
+    hardship_reason: str,
+) -> dict:
+    """Offer an eligible short-term payment arrangement."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    return {
+        "requested_account_id": account_id,
+        "eligible": True,
+        "offer": {
+            "deferred_amount_usd": 60,
+            "deferred_until": "2026-05-29",
+            "note": f"Arrangement available based on stated hardship reason: {hardship_reason}",
+        },
+    }
+
+
+async def apply_goodwill_credit(
+    tool_context: ToolContext,
+    account_id: str,
+    amount_usd: float,
+    rationale: str,
+) -> dict:
+    """Apply a one-time goodwill credit when within billing authority."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    approved = amount_usd <= 20
+    if approved:
+        latest_bill = await _repository().latest_bill()
+        return {
+            "requested_account_id": account_id,
+            "approved": True,
+            "credit_amount_usd": amount_usd,
+            "posted_to_bill_id": latest_bill["bill_id"],
+            "rationale": rationale,
+        }
+    return {
+        "requested_account_id": account_id,
+        "approved": False,
+        "next_step": "Requires supervisor approval because the requested credit exceeds billing authority.",
+    }
+
+
+async def check_service_outage(
+    tool_context: ToolContext,
+    zip_code: str,
+    service_type: str,
+) -> dict:
+    """Check whether the caller is affected by a service outage."""
+    outage_detected = service_type == "home_internet" and zip_code == "98109"
+    return {
+        "zip_code": zip_code,
+        "service_type": service_type,
+        "outage_detected": outage_detected,
+        "eta": "Estimated restoration in 2 hours" if outage_detected else "No area outage detected",
+    }
+
+
+async def run_line_diagnostics(
+    tool_context: ToolContext,
+    account_id: str,
+    line_id: str,
+) -> dict:
+    """Run line or device diagnostics on the account."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    return {
+        "requested_account_id": account_id,
+        "line_id": line_id,
+        "network_signal": "stable",
+        "provisioning": "healthy",
+        "device_registration": "intermittent modem impairment detected",
+        "recommendation": "Power-cycle the gateway. If symptoms continue, schedule a technician.",
+    }
+
+
+async def schedule_technician(
+    tool_context: ToolContext,
+    account_id: str,
+    appointment_window: str,
+    issue_summary: str,
+) -> dict:
+    """Schedule a technician visit in a supported appointment window."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    return {
+        "requested_account_id": account_id,
+        "scheduled": True,
+        "work_order_id": create_case_id("WO"),
+        "appointment_window": appointment_window,
+        "issue_summary": issue_summary,
+    }
+
+
+async def reboot_device_workflow(
+    tool_context: ToolContext,
+    account_id: str,
+    device_id: str,
+) -> dict:
+    """Trigger a remote reboot workflow for a registered device."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    return {
+        "requested_account_id": account_id,
+        "device_id": device_id,
+        "status": "reboot_sent",
+        "expected_recovery_time": "3 to 5 minutes",
+    }
+
+
+async def lookup_plan_options(
+    tool_context: ToolContext,
+    account_id: str,
+) -> dict:
+    """Return available Atenxion plan options for the account."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    plan_catalog = await _repository().plan_catalog()
+    return {
+        "requested_account_id": account_id,
+        "plans": plan_catalog,
+    }
+
+
+async def compare_plans(
+    tool_context: ToolContext,
+    account_id: str,
+    target_plan_code: str,
+) -> dict:
+    """Compare the customer's current plan against a target plan."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    customer_profile = await _repository().customer_profile()
+    plan_catalog = await _repository().plan_catalog()
+    target = next(
+        (plan for plan in plan_catalog if plan["code"] == target_plan_code),
+        None,
+    )
+    return {
+        "requested_account_id": account_id,
+        "current_plan": customer_profile["current_plan"],
+        "target_plan": target,
+        "tradeoff_summary": (
+            f"Switching to {target['name']} changes the monthly rate to ${target['monthly_price_usd']} and changes included perks."
+            if target
+            else "Target plan not found."
+        ),
+    }
+
+
+async def generate_retention_offer(
+    tool_context: ToolContext,
+    account_id: str,
+    risk_reason: str,
+) -> dict:
+    """Generate a retention offer for a customer considering cancellation."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    return {
+        "requested_account_id": account_id,
+        "risk_reason": risk_reason,
+        "offer": {
+            "monthly_discount_usd": 15,
+            "duration_months": 3,
+            "alternate_option": "Move to Atenxion Start to reduce the monthly bill immediately.",
+        },
+    }
+
+
+async def submit_cancellation_request(
+    tool_context: ToolContext,
+    account_id: str,
+    effective_date: str,
+    reason: str,
+) -> dict:
+    """Submit a cancellation request for the account."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    return {
+        "requested_account_id": account_id,
+        "cancellation_request_id": create_case_id("CANCEL"),
+        "effective_date": effective_date,
+        "reason": reason,
+        "status": "pending_final_confirmation",
+    }
+
+
+async def lookup_policy_document(
+    tool_context: ToolContext,
+    topic: str,
+) -> dict:
+    """Look up an Atenxion policy document by topic."""
+    policy_docs = await _repository().policy_docs()
+    matches = [
+        doc for doc in policy_docs if topic.lower() in doc["topic"].lower()
+    ]
+    return {"matches": matches}
+
+
+async def search_atenxion_knowledge_base(
+    tool_context: ToolContext,
+    query: str,
+    max_num_results: int = 5,
+    topic: str | None = None,
+    service_type: str | None = None,
+) -> dict:
+    """Search Atenxion's OpenAI vector store for policy, troubleshooting, billing, and retention knowledge."""
+    return await _search_atenxion_knowledge_base_impl(
+        _settings(),
+        query=query,
+        max_num_results=max_num_results,
+        topic=topic,
+        service_type=service_type,
+    )
+
+
+async def approve_exception(
+    tool_context: ToolContext,
+    account_id: str,
+    exception_type: str,
+    justification: str,
+) -> dict:
+    """Approve or deny a policy exception for the account."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    return {
+        "requested_account_id": account_id,
+        "exception_type": exception_type,
+        "approved": "credit" in exception_type.lower(),
+        "decision_note": f"Supervisor reviewed the exception request. Justification noted: {justification}",
+    }
+
+
+async def escalation_decision(
+    tool_context: ToolContext,
+    case_summary: str,
+    customer_sentiment: str,
+    requested_outcome: str,
+) -> dict:
+    """Return a supervisor decision for an escalated call."""
+    return {
+        "decision": (
+            "Take ownership, apologize clearly, and provide one concrete next step before asking anything else."
+            if "angry" in customer_sentiment.lower()
+            else "Acknowledge the prior work, answer directly, and confirm the requested outcome."
+        ),
+        "case_summary": case_summary,
+        "requested_outcome": requested_outcome,
+    }
