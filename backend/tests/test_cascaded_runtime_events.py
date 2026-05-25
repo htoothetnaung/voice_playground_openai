@@ -393,8 +393,18 @@ def test_first_greeting_names_alice_front_desk() -> None:
 
     response = _fixed_response_for_user_text("hi", context, "callcenteragent")
 
-    assert response == "Thanks for calling Atenxion, this is Alice at the front desk. How can I help today?"
+    assert response == "Hi, you've reached Atenxion. This is Alice at the front desk. What can I help you with today?"
     assert context.greeted is True
+
+
+def test_front_desk_vague_acknowledgement_does_not_repeat_greeting() -> None:
+    """Keep vague post-greeting caller turns moving without replaying the opening line."""
+    context = CallCenterContext(session_id="session", trace_id="trace", greeted=True)
+
+    response = _fixed_response_for_user_text("Yeah, I would be happy.", context, "callcenteragent")
+
+    assert response == "Sure. What can I help you with today?"
+    assert "This is Alice at the front desk" not in response
 
 
 def test_human_escalation_returns_fixed_supervisor_number() -> None:

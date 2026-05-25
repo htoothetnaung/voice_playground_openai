@@ -52,6 +52,8 @@ function App() {
     useState<boolean>(true);
   const [areFillerSoundsEnabled, setAreFillerSoundsEnabled] =
     useState<boolean>(true);
+  const [isAssistantSpeaking, setIsAssistantSpeaking] =
+    useState<boolean>(false);
   const {
     playTransfer,
     stopToolWait,
@@ -108,9 +110,11 @@ function App() {
         stopToolWait();
       },
       onAssistantSpeechStart: () => {
+        setIsAssistantSpeaking(true);
         setAssistantAudioActive(true);
       },
       onAssistantSpeechEnd: () => {
+        setIsAssistantSpeaking(false);
         setAssistantAudioActive(false);
       },
     });
@@ -187,6 +191,7 @@ function App() {
 
   const disconnectFromRealtime = () => {
     setAssistantAudioActive(false);
+    setIsAssistantSpeaking(false);
     stopAll();
     disconnect();
     setSessionStatus("DISCONNECTED");
@@ -337,6 +342,7 @@ function App() {
   useEffect(() => {
     if (sessionStatus === "DISCONNECTED") {
       setAssistantAudioActive(false);
+      setIsAssistantSpeaking(false);
       stopAll();
     }
   }, [sessionStatus, setAssistantAudioActive, stopAll]);
@@ -609,6 +615,11 @@ function App() {
           downloadRecording={downloadRecording}
           canDownloadRecording={false}
           canSend={sessionStatus === "CONNECTED"}
+          sessionStatus={sessionStatus}
+          isMicrophoneEnabled={isMicrophoneEnabled}
+          micActivity={micMeter.micActivity}
+          isAssistantSpeaking={isAssistantSpeaking}
+          activeAgentName={selectedAgentName}
         />
         <Events isExpanded={isEventsPaneExpanded} />
       </div>
@@ -618,9 +629,6 @@ function App() {
         onToggleConnection={onToggleConnection}
         isMicrophoneEnabled={isMicrophoneEnabled}
         setIsMicrophoneEnabled={setIsMicrophoneEnabled}
-        micLevel={micMeter.micLevel}
-        micSamples={micMeter.micSamples}
-        micActivity={micMeter.micActivity}
         isEventsPaneExpanded={isEventsPaneExpanded}
         setIsEventsPaneExpanded={setIsEventsPaneExpanded}
         isAudioPlaybackEnabled={isAudioPlaybackEnabled}

@@ -1032,10 +1032,13 @@ def _fixed_response_for_user_text(
 
     if _is_first_greeting(normalized, context, active_agent_name):
         context.greeted = True
-        return "Thanks for calling Atenxion, this is Alice at the front desk. How can I help today?"
+        return "Hi, you've reached Atenxion. This is Alice at the front desk. What can I help you with today?"
 
     if not context.greeted and active_agent_name == "callcenteragent":
         context.greeted = True
+
+    if active_agent_name == "callcenteragent" and context.greeted and _is_vague_front_desk_acknowledgement(normalized):
+        return "Sure. What can I help you with today?"
 
     if _is_human_escalation_request(normalized):
         return (
@@ -1054,6 +1057,26 @@ def _is_first_greeting(normalized: str, context: CallCenterContext, active_agent
     if context.greeted or active_agent_name != "callcenteragent":
         return False
     return normalized in {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
+
+
+def _is_vague_front_desk_acknowledgement(normalized: str) -> bool:
+    """Detect short acknowledgement-only turns that need a natural prompt, not another greeting."""
+    simplified = " ".join(normalized.translate(str.maketrans("", "", ".,!?;:")).split())
+    acknowledgements = {
+        "yeah",
+        "yes",
+        "yep",
+        "okay",
+        "ok",
+        "sure",
+        "alright",
+        "all right",
+        "sounds good",
+        "i would be happy",
+        "yeah i would be happy",
+        "yes i would be happy",
+    }
+    return simplified in acknowledgements
 
 
 def _is_human_escalation_request(normalized: str) -> bool:

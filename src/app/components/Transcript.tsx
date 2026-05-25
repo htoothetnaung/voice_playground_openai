@@ -7,6 +7,8 @@ import { ClipboardCopyIcon, DownloadIcon } from "@radix-ui/react-icons";
 
 import { BreadcrumbType, TranscriptItem } from "@/app/types";
 import { useTranscript } from "@/app/contexts/TranscriptContext";
+import type { MicActivity } from "@/app/hooks/useBackendRealtimeSession";
+import type { SessionStatus } from "@/app/types";
 
 import { GuardrailChip } from "./GuardrailChip";
 
@@ -17,6 +19,11 @@ export interface TranscriptProps {
   canSend: boolean;
   downloadRecording: () => void;
   canDownloadRecording?: boolean;
+  sessionStatus: SessionStatus;
+  isMicrophoneEnabled: boolean;
+  micActivity: MicActivity;
+  isAssistantSpeaking: boolean;
+  activeAgentName?: string;
 }
 
 function getBreadcrumbPresentation(
@@ -99,6 +106,11 @@ function Transcript({
   canSend,
   downloadRecording,
   canDownloadRecording = true,
+  sessionStatus,
+  isMicrophoneEnabled,
+  micActivity,
+  isAssistantSpeaking,
+  activeAgentName,
 }: TranscriptProps) {
   const { transcriptItems, toggleTranscriptItemExpand } = useTranscript();
   const transcriptRef = useRef<HTMLDivElement | null>(null);
@@ -146,6 +158,14 @@ function Transcript({
     }
   };
 
+  const voiceStatus = getVoiceStatus({
+    sessionStatus,
+    isMicrophoneEnabled,
+    micActivity,
+    isAssistantSpeaking,
+    activeAgentName,
+  });
+
   return (
     <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex min-h-0 flex-1 flex-col">
@@ -173,6 +193,100 @@ function Transcript({
               <span>{canDownloadRecording ? "Download Audio" : "Download"}</span>
             </button>
           </div>
+        </div>
+
+        <div className="border-b border-slate-200 bg-slate-950 px-4 py-4 text-white sm:px-6">
+          <div className="flex min-w-0 items-center gap-4">
+            <div className={`voice-orb ${voiceStatus.orbClass}`} aria-hidden="true">
+              <span className="voice-orb-core" />
+              <span className="voice-orb-ring" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-3 py-1 text-sm font-semibold ${voiceStatus.badgeClass}`}>
+                  {voiceStatus.badge}
+                </span>
+                <span className="text-xs text-slate-400">{voiceStatus.caption}</span>
+              </div>
+              <div className="flex h-8 items-end gap-1.5" aria-label={voiceStatus.ariaLabel}>
+                {voiceStatus.bars.map((height, index) => (
+                  <span
+                    key={index}
+                    className={`voice-bar ${voiceStatus.barClass}`}
+                    style={{
+                      height,
+                      animationDelay: `${index * 90}ms`,
+                      animationPlayState: voiceStatus.isAnimated ? "running" : "paused",
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+          <style jsx>{`
+            .voice-orb {
+              position: relative;
+              display: flex;
+              height: 3rem;
+              width: 3rem;
+              flex-shrink: 0;
+              align-items: center;
+              justify-content: center;
+              border-radius: 9999px;
+              overflow: hidden;
+              background:
+                conic-gradient(from 20deg, #f8fafc, #475569, #020617, #f8fafc, #94a3b8, #020617, #f8fafc),
+                radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), transparent 38%);
+              box-shadow: inset 0 0 10px rgba(255,255,255,0.35), 0 0 0 1px rgba(255,255,255,0.08);
+              animation: orb-spin 4s linear infinite;
+            }
+            .voice-orb-core {
+              height: 0.8rem;
+              width: 0.8rem;
+              border-radius: 9999px;
+              background: rgba(15, 23, 42, 0.75);
+              box-shadow: 0 0 18px rgba(255,255,255,0.45);
+              z-index: 2;
+            }
+            .voice-orb-ring {
+              position: absolute;
+              inset: 0.35rem;
+              border-radius: 9999px;
+              border: 1px solid rgba(255,255,255,0.22);
+            }
+            .voice-orb.is-speaking,
+            .voice-orb.is-user-speaking {
+              animation-duration: 1.4s;
+            }
+            .voice-orb.is-idle {
+              animation-play-state: paused;
+              opacity: 0.72;
+            }
+            .voice-bar {
+              display: block;
+              width: min(8%, 0.42rem);
+              min-width: 0.22rem;
+              border-radius: 9999px;
+              opacity: 0.9;
+              animation: voice-bounce 900ms ease-in-out infinite;
+              transform-origin: bottom;
+            }
+            @keyframes orb-spin {
+              to {
+                transform: rotate(360deg);
+              }
+            }
+            @keyframes voice-bounce {
+              0%, 100% {
+                transform: scaleY(0.55);
+                opacity: 0.55;
+              }
+              50% {
+                transform: scaleY(1);
+                opacity: 1;
+              }
+            }
+          `}</style>
         </div>
 
         <div
@@ -340,3 +454,110 @@ function Transcript({
 }
 
 export default Transcript;
+
+type VoiceStatusInput = {
+  sessionStatus: SessionStatus;
+  isMicrophoneEnabled: boolean;
+  micActivity: MicActivity;
+  isAssistantSpeaking: boolean;
+  activeAgentName?: string;
+};
+
+function getVoiceStatus({
+  sessionStatus,
+  isMicrophoneEnabled,
+  micActivity,
+  isAssistantSpeaking,
+  activeAgentName,
+}: VoiceStatusInput) {
+  const agentLabel = activeAgentName ? `Agent: ${activeAgentName}` : "Voice agent";
+
+  if (sessionStatus === "CONNECTING") {
+    return {
+      badge: "Connecting",
+      caption: "Preparing the live voice session",
+      ariaLabel: "Voice session connecting",
+      badgeClass: "bg-slate-700 text-slate-100",
+      barClass: "bg-slate-400",
+      orbClass: "is-idle",
+      bars: [8, 14, 20, 14, 8, 12, 16, 12],
+      isAnimated: true,
+    };
+  }
+
+  if (sessionStatus !== "CONNECTED") {
+    return {
+      badge: "Offline",
+      caption: "Connect to start a voice call",
+      ariaLabel: "Voice session offline",
+      badgeClass: "bg-slate-800 text-slate-300",
+      barClass: "bg-slate-600",
+      orbClass: "is-idle",
+      bars: [8, 8, 8, 8, 8, 8, 8, 8],
+      isAnimated: false,
+    };
+  }
+
+  if (isAssistantSpeaking) {
+    return {
+      badge: "Talking",
+      caption: `${agentLabel} is responding`,
+      ariaLabel: "Assistant is speaking",
+      badgeClass: "bg-cyan-300 text-slate-950",
+      barClass: "bg-cyan-300",
+      orbClass: "is-speaking",
+      bars: [12, 22, 30, 18, 26, 32, 20, 14],
+      isAnimated: true,
+    };
+  }
+
+  if (!isMicrophoneEnabled) {
+    return {
+      badge: "Mic off",
+      caption: "Turn on the microphone to speak",
+      ariaLabel: "Microphone disabled",
+      badgeClass: "bg-slate-700 text-slate-100",
+      barClass: "bg-slate-600",
+      orbClass: "is-idle",
+      bars: [8, 8, 8, 8, 8, 8, 8, 8],
+      isAnimated: false,
+    };
+  }
+
+  if (micActivity === "speech") {
+    return {
+      badge: "Listening",
+      caption: "I can hear you speaking",
+      ariaLabel: "User speech detected",
+      badgeClass: "bg-emerald-300 text-slate-950",
+      barClass: "bg-emerald-300",
+      orbClass: "is-user-speaking",
+      bars: [10, 18, 28, 24, 30, 20, 16, 12],
+      isAnimated: true,
+    };
+  }
+
+  if (micActivity === "noise") {
+    return {
+      badge: "Filtering",
+      caption: "Background sound is being ignored",
+      ariaLabel: "Background noise filtered",
+      badgeClass: "bg-amber-300 text-slate-950",
+      barClass: "bg-amber-300",
+      orbClass: "is-idle",
+      bars: [8, 10, 12, 10, 14, 10, 12, 8],
+      isAnimated: true,
+    };
+  }
+
+  return {
+    badge: "Listening",
+    caption: "Waiting for your voice",
+    ariaLabel: "Listening for user voice",
+    badgeClass: "bg-slate-700 text-slate-100",
+    barClass: "bg-slate-400",
+    orbClass: "is-idle",
+    bars: [8, 10, 12, 10, 8, 10, 12, 10],
+    isAnimated: true,
+  };
+}
