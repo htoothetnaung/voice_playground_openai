@@ -18,6 +18,9 @@ def test_callcenter_scenario_metadata() -> None:
     assert "Atenxion-bank-tool" in payload["tools"]["billing"]
     assert "Atenxion-bank-tool" in payload["tools"]["external_api"]
     assert "billingAgent" in payload["agents"]
+    architecture_ids = {item["id"] for item in payload["available_architectures"]}
+    assert "cascaded_pipeline" in architecture_ids
+    assert "elevenlabs_pipeline" in architecture_ids
     assert "searchAtenxionKnowledgeBase" in payload["tools"]["supervisor"]
     assert "sendCustomerFollowupEmailViaMcp" in payload["tools"]["mcp_workflow"]
     assert "createCustomerTicketViaMcp" in payload["tools"]["mcp_workflow"]

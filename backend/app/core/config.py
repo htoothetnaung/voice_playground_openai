@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     deepgram_endpointing_ms: int = Field(default=300, alias="DEEPGRAM_ENDPOINTING_MS")
     deepgram_utterance_end_ms: int = Field(default=1000, alias="DEEPGRAM_UTTERANCE_END_MS")
     elevenlabs_api_key: str | None = Field(default=None, alias="ELEVENLABS_API_KEY")
+    elevenlabs_stt_model: str = Field(default="scribe_v2_realtime", alias="ELEVENLABS_STT_MODEL")
+    elevenlabs_stt_commit_silence_ms: int = Field(default=250, alias="ELEVENLABS_STT_COMMIT_SILENCE_MS")
     elevenlabs_tts_model: str = Field(default="eleven_flash_v2_5", alias="ELEVENLABS_TTS_MODEL")
     elevenlabs_tts_alt_model: str = Field(default="eleven_turbo_v2_5", alias="ELEVENLABS_TTS_ALT_MODEL")
     elevenlabs_voice_id: str = Field(default="JBFqnCBsd6RMkjVDRZzb", alias="ELEVENLABS_VOICE_ID")

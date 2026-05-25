@@ -1,5 +1,4 @@
 """Implements account lookup, verification, billing, technical support, retention, supervisor, and case-management tool behavior over mock data."""
-from datetime import datetime
 import re
 from time import monotonic
 from typing import Any
@@ -22,22 +21,6 @@ from app.agents.callcenter.mcp_integrations import (
     validate_email,
 )
 from app.core.config import Settings, get_settings
-
-_DATE_FORMATS = (
-    "%Y-%m-%d",
-    "%Y/%m/%d",
-    "%m/%d/%Y",
-    "%m-%d-%Y",
-    "%d/%m/%Y",
-    "%d-%m-%Y",
-    "%d %B %Y",
-    "%d %b %Y",
-    "%B %d %Y",
-    "%b %d %Y",
-    "%B %d, %Y",
-    "%b %d, %Y",
-)
-
 
 def create_case_id(prefix: str) -> str:
     """Create deterministic demo case or work-order identifiers tied to the mock Atenxion account."""
@@ -62,10 +45,7 @@ def _verification_required() -> dict:
     return {
         "authorized": False,
         "security_status": "verification_required",
-        "next_step": (
-            "Do not provide account-specific details yet. Ask the caller to verify the phone number, "
-            "date of birth, and 4-digit PIN first."
-        ),
+        "next_step": "Do not provide account-specific details yet. Ask the caller for the phone number on the account first.",
     }
 
 
@@ -77,21 +57,6 @@ def _is_verified(ctx: RunContextWrapper[CallCenterContext]) -> bool:
 def _digits_only(value: str) -> str:
     """Normalize identity fields that may be spoken or typed with separators."""
     return re.sub(r"\D", "", value or "")
-
-
-def _normalize_date_of_birth(value: str) -> str:
-    """Normalize common typed or spoken DOB formats to the mock record's ISO date."""
-    normalized = re.sub(r"[,]+", " ", value or "").strip()
-    normalized = re.sub(r"\s+", " ", normalized)
-    if not normalized:
-        return ""
-
-    for date_format in _DATE_FORMATS:
-        try:
-            return datetime.strptime(normalized, date_format).date().isoformat()
-        except ValueError:
-            continue
-    return normalized.lower()
 
 
 def _clamp_search_result_count(max_num_results: int) -> int:
@@ -280,18 +245,10 @@ async def lookup_customer_profile(
 async def verify_caller(
     ctx: RunContextWrapper[CallCenterContext],
     phone_number: str,
-    date_of_birth: str,
-    pin_last4: str,
 ) -> dict:
-    """Verify the caller using phone number, date of birth, and 4-digit PIN."""
+    """Verify the caller using the account phone number."""
     customer_profile = await _repository().customer_profile()
-    verified = (
-        _digits_only(phone_number)
-        == _digits_only(customer_profile["phone_number"])
-        and _normalize_date_of_birth(date_of_birth)
-        == _normalize_date_of_birth(customer_profile["date_of_birth"])
-        and _digits_only(pin_last4) == _digits_only(customer_profile["pin_last4"])
-    )
+    verified = _digits_only(phone_number) == _digits_only(customer_profile["phone_number"])
     ctx.context.verified = verified
     if verified:
         ctx.context.active_account_id = customer_profile["account_id"]
@@ -304,8 +261,7 @@ async def verify_caller(
         "verified": False,
         "security_status": "failed",
         "next_step": (
-            "Do not transfer or escalate. Tell the caller the phone number, date of birth, "
-            "or PIN does not match Atenxion's records. Ask them to check their account details "
+            "Do not transfer or escalate. Tell the caller the phone number does not match Atenxion's records. Ask them to check their account details "
             "and call back, then close the call politely."
         ),
     }

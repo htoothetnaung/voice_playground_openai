@@ -3,8 +3,6 @@ ATENXION_CUSTOMER_PROFILE = {
     "account_id": "ATX-204871",
     "full_name": "Htoo Thet",
     "phone_number": "09661200650",
-    "date_of_birth": "2004-05-29",
-    "pin_last4": "1234",
     "sentiment": "frustrated_but_cooperative",
     "tenure_years": 4,
     "autopay": True,
@@ -237,7 +235,7 @@ def _build_atenxion_rag_documents() -> list[dict]:
             "topic": "fraud_security",
             "service_type": "account_security",
             "title": "Verification and Security Boundary",
-            "summary": "Account-specific details require successful phone, date-of-birth, and PIN verification.",
+            "summary": "Account-specific details require successful account phone-number verification.",
             "guidance": "Failed verification is not an escalation path. Ask the caller to check account details and call back.",
         },
     ]

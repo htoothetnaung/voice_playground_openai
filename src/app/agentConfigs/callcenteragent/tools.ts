@@ -50,23 +50,18 @@ export const sharedCallCenterTools = [
   }),
   tool({
     name: "verifyCaller",
-    description: "Verify the caller using phone number, date of birth, and 4-digit PIN.",
+    description: "Verify the caller using the account phone number.",
     parameters: {
       type: "object",
       properties: {
         phone_number: { type: "string" },
-        date_of_birth: { type: "string", description: "Format 'YYYY-MM-DD'." },
-        pin_last4: { type: "string", description: "4-digit PIN." },
       },
-      required: ["phone_number", "date_of_birth", "pin_last4"],
+      required: ["phone_number"],
       additionalProperties: false,
     },
     execute: async (input: any) => {
-      const { phone_number, date_of_birth, pin_last4 } = input;
-      const verified =
-        phone_number === atenxionCustomerProfile.phone_number &&
-        date_of_birth === atenxionCustomerProfile.date_of_birth &&
-        pin_last4 === atenxionCustomerProfile.pin_last4;
+      const { phone_number } = input;
+      const verified = phone_number === atenxionCustomerProfile.phone_number;
       return verified
         ? {
             verified: true,
@@ -76,7 +71,7 @@ export const sharedCallCenterTools = [
         : {
             verified: false,
             security_status: "failed",
-            next_step: "Ask the caller to re-confirm the date of birth and 4-digit PIN.",
+            next_step: "Ask the caller to check the phone number on the account.",
           };
     },
   }),

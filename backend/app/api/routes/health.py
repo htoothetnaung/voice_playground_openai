@@ -17,7 +17,7 @@ async def health(settings: Settings = Depends(get_settings)) -> dict:
         "ok": True,
         "service": "atenxion-callcenter-backend",
         "voice_provider": settings.voice_provider,
-        "available_architectures": ["openai_native", "cascaded_pipeline"],
+        "available_architectures": ["openai_native", "cascaded_pipeline", "elevenlabs_pipeline"],
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "uptime_seconds": round(monotonic() - _STARTED_AT, 3),
     }

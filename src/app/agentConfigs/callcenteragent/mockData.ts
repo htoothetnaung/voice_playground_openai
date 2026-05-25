@@ -2,8 +2,6 @@ export const atenxionCustomerProfile = {
   account_id: 'ATX-204871',
   full_name: 'Maya Thompson',
   phone_number: '(206) 555-0147',
-  date_of_birth: '1991-08-19',
-  pin_last4: '4821',
   sentiment: 'frustrated_but_cooperative',
   tenure_years: 4,
   autopay: true,

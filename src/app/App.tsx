@@ -527,6 +527,7 @@ function App() {
                 >
                   <option value="openai_native">OpenAI native realtime</option>
                   <option value="cascaded_pipeline">Deepgram + GPT + ElevenLabs</option>
+                  <option value="elevenlabs_pipeline">ElevenLabs + GPT + ElevenLabs</option>
                 </select>
                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500">
                   <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">

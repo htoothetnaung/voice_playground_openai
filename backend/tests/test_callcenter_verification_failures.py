@@ -35,13 +35,7 @@ async def test_failed_verification_tells_agent_not_to_escalate() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     result = await verify_caller.on_invoke_tool(
         FakeToolContext("verify_caller"),
-        json.dumps(
-            {
-                "phone_number": "09661200650",
-                "date_of_birth": "1999-01-01",
-                "pin_last4": "9999",
-            }
-        ),
+        json.dumps({"phone_number": "00000000000"}),
     )
 
     assert result["verified"] is False
@@ -51,17 +45,11 @@ async def test_failed_verification_tells_agent_not_to_escalate() -> None:
 
 
 @pytest.mark.asyncio
-async def test_verification_accepts_equivalent_identity_formats() -> None:
-    """Verify spoken or typed identity formats can still match the canonical mock record."""
+async def test_verification_accepts_formatted_phone_number() -> None:
+    """Verify spoken or typed phone formats can still match the canonical mock record."""
     result = await verify_caller.on_invoke_tool(
         FakeToolContext("verify_caller"),
-        json.dumps(
-            {
-                "phone_number": "09661200650",
-                "date_of_birth": "29 May 2004",
-                "pin_last4": "PIN: 1234",
-            }
-        ),
+        json.dumps({"phone_number": "096 612 00650"}),
     )
 
     assert result["verified"] is True
@@ -92,6 +80,8 @@ async def test_account_specific_tools_require_verification() -> None:
     assert result["authorized"] is False
     assert result["security_status"] == "verification_required"
     assert "Do not provide account-specific details" in result["next_step"]
+    assert "phone number" in result["next_step"]
+    assert "PIN" not in result["next_step"]
 
 
 @pytest.mark.asyncio

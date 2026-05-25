@@ -19,6 +19,7 @@ from app.agents.callcenter.cascaded.deepgram import (
     TranscriptEvent,
 )
 from app.agents.callcenter.cascaded.elevenlabs import ElevenLabsTTSAdapter
+from app.agents.callcenter.cascaded.elevenlabs_stt import ElevenLabsRealtimeTranscriber
 from app.agents.callcenter.cascaded.events import audio_event, message_item, serialize
 from app.agents.callcenter.cascaded.metrics import TurnMetrics
 from app.agents.callcenter.cascaded.sentence_buffer import SentenceBuffer
@@ -31,7 +32,7 @@ HANDOFF_TRANSFER_DELAY_SECONDS = 2.5
 MAX_AGENT_TURNS = 30
 PCM_BYTES_PER_SAMPLE = 2
 MIN_TTS_AUDIO_FRAME_MS = 40
-STT_FINAL_FALLBACK_MS = 900
+STT_FINAL_FALLBACK_MS = 350
 logger = logging.getLogger(__name__)
 
 AGENT_DISPLAY_DETAILS = {
@@ -86,17 +87,19 @@ HANDOFF_INTRO_TEMPLATES = {
 
 
 class CallCenterCascadedRuntime:
-    """Runtime that coordinates Deepgram STT, OpenAI Agents SDK streaming, ElevenLabs TTS, and frontend WebSocket events."""
+    """Runtime that coordinates STT, OpenAI Agents SDK streaming, ElevenLabs TTS, and frontend WebSocket events."""
     architecture = "cascaded_pipeline"
 
     def __init__(
         self,
         settings: Settings,
-        transcriber: DeepgramStreamingTranscriber | None = None,
+        transcriber: Any | None = None,
         tts_adapter: ElevenLabsTTSAdapter | None = None,
+        architecture: str = "cascaded_pipeline",
     ) -> None:
         """Initialize this object with the dependencies it needs for the surrounding backend workflow."""
         self.settings = settings
+        self.architecture = architecture
         os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key)
         self.agents = build_callcenter_agent_map(model=settings.cascaded_llm_model)
         self.session_db_path = Path(settings.callcenter_session_db_path)
@@ -107,6 +110,8 @@ class CallCenterCascadedRuntime:
         self._response_task: asyncio.Task[None] | None = None
         self._ptt_audio_buffer: bytearray | None = None
         self._tool_call_names: dict[str, str] = {}
+        self._client_speech_gate_open = False
+        self._gated_audio_active = False
 
     async def serve(self, websocket: WebSocket, agent_name: str | None = None) -> None:
         """Own the lifetime of one WebSocket session, initialize provider or SDK state, and coordinate reader and writer tasks."""
@@ -141,14 +146,15 @@ class CallCenterCascadedRuntime:
                     await audited_websocket.send_json(
                         {
                             "type": "stt_stream_ready",
-                            "stt_model": self.settings.deepgram_stt_model,
+                            "stt_model": self._stt_model_name(),
+                            "stt_provider": self._stt_provider_name(),
                         }
                     )
                 except Exception as exc:
                     await audited_websocket.send_json(
                         {
                             "type": "error",
-                            "error": f"Deepgram live STT connection failed; push-to-talk transcription will still retry: {exc}",
+                            "error": f"{self._stt_display_name()} live STT connection failed; push-to-talk transcription will still retry: {exc}",
                         }
                     )
             if transcriber is None:
@@ -173,7 +179,8 @@ class CallCenterCascadedRuntime:
                 {
                     "type": "architecture_selected",
                     "architecture": self.architecture,
-                    "stt_model": self.settings.deepgram_stt_model,
+                    "stt_model": self._stt_model_name(),
+                    "stt_provider": self._stt_provider_name(),
                     "llm_model": self.settings.cascaded_llm_model,
                     "tts_model": self.settings.elevenlabs_tts_model,
                 }
@@ -216,8 +223,17 @@ class CallCenterCascadedRuntime:
             with contextlib.suppress(Exception):
                 await websocket.close()
 
-    def _build_transcriber(self) -> DeepgramStreamingTranscriber | None:
-        """Create the Deepgram adapter when STT credentials are configured."""
+    def _build_transcriber(self) -> Any | None:
+        """Create the configured realtime STT adapter when credentials are available."""
+        if self.architecture == "elevenlabs_pipeline":
+            if not self.settings.elevenlabs_api_key:
+                return None
+            return ElevenLabsRealtimeTranscriber(
+                api_key=self.settings.elevenlabs_api_key,
+                model=self.settings.elevenlabs_stt_model,
+                sample_rate=self.settings.cascaded_input_sample_rate,
+                open_timeout_seconds=self.settings.cascaded_provider_timeout_seconds,
+            )
         if not self.settings.deepgram_api_key:
             return None
         return DeepgramStreamingTranscriber(
@@ -228,6 +244,22 @@ class CallCenterCascadedRuntime:
             utterance_end_ms=self.settings.deepgram_utterance_end_ms,
             open_timeout_seconds=self.settings.cascaded_provider_timeout_seconds,
         )
+
+    def _stt_provider_name(self) -> str:
+        return "elevenlabs" if self.architecture == "elevenlabs_pipeline" else "deepgram"
+
+    def _stt_model_name(self) -> str:
+        if self.architecture == "elevenlabs_pipeline":
+            return self.settings.elevenlabs_stt_model
+        return self.settings.deepgram_stt_model
+
+    def _stt_display_name(self) -> str:
+        return "ElevenLabs Scribe" if self.architecture == "elevenlabs_pipeline" else "Deepgram"
+
+    def _stt_commit_silence_ms(self) -> int:
+        if self.architecture == "elevenlabs_pipeline":
+            return self.settings.elevenlabs_stt_commit_silence_ms
+        return self.settings.deepgram_endpointing_ms
 
     def _build_tts_adapter(self) -> ElevenLabsTTSAdapter | None:
         """Create the ElevenLabs adapter when TTS credentials are configured."""
@@ -257,6 +289,7 @@ class CallCenterCascadedRuntime:
                 raise WebSocketDisconnect()
 
             if message.get("bytes") is not None:
+                self._gated_audio_active = self._client_speech_gate_open or self._ptt_audio_buffer is not None
                 if self._active_stt_metrics is None:
                     self._active_stt_metrics = self._new_metrics()
                 first_audio_chunk = self._active_stt_metrics.user_audio_bytes == 0
@@ -268,7 +301,8 @@ class CallCenterCascadedRuntime:
                         {
                             "type": "stt_audio_received",
                             "bytes": len(message["bytes"]),
-                            "stt_model": self.settings.deepgram_stt_model,
+                            "stt_model": self._stt_model_name(),
+                            "stt_provider": self._stt_provider_name(),
                         }
                     )
                 if self._ptt_audio_buffer is not None:
@@ -280,7 +314,7 @@ class CallCenterCascadedRuntime:
                         await websocket.send_json(
                             {
                                 "type": "error",
-                                "error": f"Deepgram STT stream unavailable: {exc}",
+                                "error": f"{self._stt_display_name()} STT stream unavailable: {exc}",
                             }
                         )
                         transcriber = None
@@ -312,8 +346,20 @@ class CallCenterCascadedRuntime:
                     direction="client",
                 )
                 client_payload = payload.get("event", {}).get("payload")
-                if isinstance(client_payload, dict) and client_payload.get("type") == "input_audio_buffer.clear":
-                    self._ptt_audio_buffer = bytearray()
+                if isinstance(client_payload, dict):
+                    client_event_type = client_payload.get("type")
+                    if client_event_type == "input_audio_buffer.clear":
+                        self._ptt_audio_buffer = bytearray()
+                        self._gated_audio_active = True
+                    elif client_event_type == "speech_gate.open":
+                        self._client_speech_gate_open = True
+                        self._gated_audio_active = True
+                        if self._response_task and not self._response_task.done():
+                            self._response_task.cancel()
+                            await websocket.send_json({"type": "audio_interrupted"})
+                    elif client_event_type == "speech_gate.closed":
+                        self._client_speech_gate_open = False
+                        self._gated_audio_active = False
             elif message_type == "audio_commit" and transcriber is not None:
                 if self._ptt_audio_buffer is not None:
                     await self._commit_ptt_audio(
@@ -325,20 +371,20 @@ class CallCenterCascadedRuntime:
                         tts_adapter,
                     )
                 else:
-                    await transcriber.flush_audio()
+                    await transcriber.flush_audio(duration_ms=self._stt_commit_silence_ms())
             elif message_type == "ping":
                 await websocket.send_json({"type": "pong"})
 
     async def _commit_ptt_audio(
         self,
         websocket: WebSocket,
-        transcriber: DeepgramStreamingTranscriber,
+        transcriber: Any,
         starting_agent: Any,
         context: CallCenterContext,
         session: SQLiteSession,
         tts_adapter: ElevenLabsTTSAdapter | None,
     ) -> None:
-        """Transcribe one push-to-talk clip through Deepgram REST and start the agent turn."""
+        """Transcribe one push-to-talk clip and start the agent turn."""
         audio = bytes(self._ptt_audio_buffer or b"")
         self._ptt_audio_buffer = None
         metrics = self._active_stt_metrics or self._new_metrics()
@@ -352,7 +398,7 @@ class CallCenterCascadedRuntime:
             await websocket.send_json(
                 {
                     "type": "error",
-                    "error": f"Deepgram PTT transcription failed: {exc}",
+                    "error": f"{self._stt_display_name()} PTT transcription failed: {exc}",
                 }
             )
             return
@@ -389,7 +435,7 @@ class CallCenterCascadedRuntime:
         session: SQLiteSession,
         tts_adapter: ElevenLabsTTSAdapter | None,
     ) -> None:
-        """Consume Deepgram transcript events and start an OpenAI agent turn when speech finalizes."""
+        """Consume STT transcript events and start an OpenAI agent turn when speech finalizes."""
         pending_final_task: asyncio.Task[None] | None = None
 
         async def start_turn(event: TranscriptEvent, metrics: TurnMetrics) -> None:
@@ -399,6 +445,8 @@ class CallCenterCascadedRuntime:
             metrics.turn_detected_ms = metrics.mark_ms()
             await websocket.send_json({"type": "turn_detected", "text": text})
             self._active_stt_metrics = None
+            self._client_speech_gate_open = False
+            self._gated_audio_active = False
             await self._start_agent_turn(
                 websocket,
                 text=text,
@@ -429,10 +477,19 @@ class CallCenterCascadedRuntime:
                 metrics = self._active_stt_metrics or self._new_metrics()
                 if event.event_type == "speech_started":
                     cancel_pending_final()
-                    if self._response_task and not self._response_task.done():
+                    if (
+                        self._gated_audio_active
+                        and self._response_task
+                        and not self._response_task.done()
+                    ):
                         self._response_task.cancel()
                         await websocket.send_json({"type": "audio_interrupted"})
-                    await websocket.send_json({"type": "speech_started"})
+                    await websocket.send_json(
+                        {
+                            "type": "speech_started",
+                            "accepted": self._gated_audio_active,
+                        }
+                    )
                     continue
 
                 if event.event_type == "stt_partial":
@@ -792,8 +849,8 @@ class CallCenterCascadedRuntime:
         """Create a TurnMetrics object populated with the active cascaded provider and model settings."""
         return TurnMetrics(
             architecture=self.architecture,
-            stt_provider="deepgram",
-            stt_model=self.settings.deepgram_stt_model,
+            stt_provider=self._stt_provider_name(),
+            stt_model=self._stt_model_name(),
             llm_provider="openai",
             llm_model=self.settings.cascaded_llm_model,
             tts_provider="elevenlabs",

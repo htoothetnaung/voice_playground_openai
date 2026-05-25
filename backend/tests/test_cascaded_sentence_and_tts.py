@@ -190,6 +190,66 @@ async def test_elevenlabs_adapter_can_override_voice_per_call(monkeypatch: pytes
 
 
 @pytest.mark.asyncio
+async def test_elevenlabs_adapter_retries_transient_connect_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify transient DNS/connect failures retry before surfacing a TTS error."""
+    attempts = 0
+
+    async def no_sleep(_: float) -> None:
+        return None
+
+    class FakeResponse:
+        """Successful retry response with one PCM chunk."""
+        is_error = False
+
+        async def aiter_bytes(self):
+            """Yield a single chunk after the retry succeeds."""
+            yield b"pcm"
+
+    class FakeStream:
+        """First stream enter fails, second stream enter succeeds."""
+        async def __aenter__(self) -> FakeResponse:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise httpx.ConnectError("[Errno 11001] getaddrinfo failed")
+            return FakeResponse()
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class FakeClient:
+        """Fake httpx client that exposes the stream context manager."""
+        def __init__(self, timeout: float) -> None:
+            return None
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def stream(self, method: str, url: str, params, headers, json):
+            return FakeStream()
+
+    monkeypatch.setattr("app.agents.callcenter.cascaded.elevenlabs.httpx.AsyncClient", FakeClient)
+    monkeypatch.setattr("app.agents.callcenter.cascaded.elevenlabs.asyncio.sleep", no_sleep)
+
+    adapter = ElevenLabsTTSAdapter(
+        api_key="eleven-key",
+        voice_id="voice",
+        model="eleven_flash_v2_5",
+        sample_rate=24000,
+    )
+
+    chunks = [chunk async for chunk in adapter.synthesize_stream("Hello.")]
+
+    assert attempts == 2
+    assert chunks == [b"pcm"]
+
+
+@pytest.mark.asyncio
 async def test_elevenlabs_adapter_reads_stream_error_body(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     class FakeResponse:

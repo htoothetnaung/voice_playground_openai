@@ -4,6 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useEvent } from "../contexts/EventContext";
 import { useTranscript } from "../contexts/TranscriptContext";
+import {
+  analyzeSpeechFrame,
+  BALANCED_SPEECH_GATE_CONFIG,
+  SpeechActivityGate,
+} from "../lib/speechActivityGate";
 import { SessionStatus } from "../types";
 
 const PCM_SAMPLE_RATE = 24000;
@@ -188,6 +193,9 @@ export function useBackendRealtimeSession(
   const inputSilenceGainRef = useRef<GainNode | null>(null);
   const hasBufferedAudioRef = useRef(false);
   const micFramesSentRef = useRef(0);
+  const speechGateRef = useRef(new SpeechActivityGate(BALANCED_SPEECH_GATE_CONFIG));
+  const speechGateSuppressedFramesRef = useRef(0);
+  const speechGateSuppressedLastLogRef = useRef(0);
   const lastMicMeterUpdateRef = useRef(0);
   const callbacksRef = useRef<BackendRealtimeSessionCallbacks>(callbacks);
   const [micMeter, setMicMeter] = useState<MicMeterState>({
@@ -391,8 +399,9 @@ export function useBackendRealtimeSession(
           });
           break;
         case "stt_stream_ready":
-          addTranscriptBreadcrumb("Deepgram STT stream ready", {
+          addTranscriptBreadcrumb(`${event.stt_provider ?? "STT"} stream ready`, {
             sttModel: event.stt_model,
+            sttProvider: event.stt_provider,
             _breadcrumbType: "session",
           });
           break;
@@ -408,6 +417,7 @@ export function useBackendRealtimeSession(
           addTranscriptBreadcrumb("Microphone audio reached STT", {
             bytes: event.bytes,
             sttModel: event.stt_model,
+            sttProvider: event.stt_provider,
             _breadcrumbType: "session",
           });
           break;
@@ -607,6 +617,7 @@ export function useBackendRealtimeSession(
         (!manualPttModeRef.current || pttSpeakingRef.current);
       if (!shouldStreamAudio) return;
 
+      const frameDurationMs = (input.length / event.inputBuffer.sampleRate) * 1000;
       const resampledInput = resampleLinear(
         input,
         event.inputBuffer.sampleRate,
@@ -614,9 +625,87 @@ export function useBackendRealtimeSession(
       );
       const pcmBuffer = float32ToInt16Bytes(resampledInput);
       if (pcmBuffer.byteLength === 0) return;
-      hasBufferedAudioRef.current = true;
-      micFramesSentRef.current += 1;
-      ws.send(pcmBuffer);
+
+      if (manualPttModeRef.current) {
+        hasBufferedAudioRef.current = true;
+        micFramesSentRef.current += 1;
+        ws.send(pcmBuffer);
+        return;
+      }
+
+      const gateResult = speechGateRef.current.processFrame({
+        audio: pcmBuffer,
+        features: analyzeSpeechFrame(input, frameDurationMs),
+      });
+
+      if (gateResult.suppressed) {
+        speechGateSuppressedFramesRef.current += 1;
+        const now = window.performance.now();
+        if (now - speechGateSuppressedLastLogRef.current > 2500) {
+          speechGateSuppressedLastLogRef.current = now;
+          addTranscriptBreadcrumb("Speech gate: background noise suppressed", {
+            suppressedFrames: speechGateSuppressedFramesRef.current,
+            noiseFloor: Number(gateResult.noiseFloor.toFixed(4)),
+            speechThreshold: Number(gateResult.speechThreshold.toFixed(4)),
+            _breadcrumbType: "session",
+          });
+        }
+      }
+
+      if (gateResult.opened) {
+        speechGateSuppressedFramesRef.current = 0;
+        ws.send(
+          JSON.stringify({
+            type: "client_event",
+            event: {
+              type: "speech_gate.open",
+              session_id: sessionIdRef.current,
+              payload: {
+                type: "speech_gate.open",
+                noiseFloor: gateResult.noiseFloor,
+                speechThreshold: gateResult.speechThreshold,
+              },
+            },
+          }),
+        );
+        addTranscriptBreadcrumb("Speech gate opened", {
+          noiseFloor: Number(gateResult.noiseFloor.toFixed(4)),
+          speechThreshold: Number(gateResult.speechThreshold.toFixed(4)),
+          _breadcrumbType: "session",
+        });
+      }
+
+      if (gateResult.closed) {
+        ws.send(
+          JSON.stringify({
+            type: "client_event",
+            event: {
+              type: "speech_gate.closed",
+              session_id: sessionIdRef.current,
+              payload: {
+                type: "speech_gate.closed",
+                noiseFloor: gateResult.noiseFloor,
+                speechThreshold: gateResult.speechThreshold,
+              },
+            },
+          }),
+        );
+        if (hasBufferedAudioRef.current) {
+          ws.send(JSON.stringify({ type: "audio_commit" }));
+          hasBufferedAudioRef.current = false;
+        }
+        addTranscriptBreadcrumb("Speech gate closed", {
+          noiseFloor: Number(gateResult.noiseFloor.toFixed(4)),
+          speechThreshold: Number(gateResult.speechThreshold.toFixed(4)),
+          _breadcrumbType: "session",
+        });
+      }
+
+      for (const frame of gateResult.framesToSend) {
+        hasBufferedAudioRef.current = true;
+        micFramesSentRef.current += 1;
+        ws.send(frame);
+      }
     };
 
     const inputSilenceGain = audioContext.createGain();
@@ -630,7 +719,7 @@ export function useBackendRealtimeSession(
     sourceNodeRef.current = sourceNode;
     processorNodeRef.current = processorNode;
     inputSilenceGainRef.current = inputSilenceGain;
-  }, [updateMicMeter]);
+  }, [addTranscriptBreadcrumb, updateMicMeter]);
 
   const resumeInputAudioContext = useCallback(() => {
     const audioContext = inputAudioContextRef.current;
@@ -725,6 +814,8 @@ export function useBackendRealtimeSession(
     stopPlayback();
     pttSpeakingRef.current = false;
     manualPttModeRef.current = false;
+    speechGateRef.current.reset();
+    speechGateSuppressedFramesRef.current = 0;
     hasBufferedAudioRef.current = false;
     sessionIdRef.current = null;
     wsRef.current?.close();
@@ -764,11 +855,15 @@ export function useBackendRealtimeSession(
     if (event?.type === "session.update") {
       const turnDetection = event?.session?.audio?.input?.turn_detection;
       manualPttModeRef.current = turnDetection == null;
+      if (!manualPttModeRef.current) {
+        speechGateRef.current.reset();
+      }
       return;
     }
 
     if (event?.type === "input_audio_buffer.clear") {
       pttSpeakingRef.current = true;
+      speechGateRef.current.reset();
       hasBufferedAudioRef.current = false;
       micFramesSentRef.current = 0;
       resumeInputAudioContext();
@@ -826,6 +921,7 @@ export function useBackendRealtimeSession(
     }
 
     pttSpeakingRef.current = false;
+    speechGateRef.current.reset();
     hasBufferedAudioRef.current = false;
     setMicMeter((current) => ({
       micLevel: 0,

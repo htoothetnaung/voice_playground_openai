@@ -63,6 +63,16 @@ async def scenario_metadata() -> dict[str, Any]:
                 "tts_provider": "elevenlabs",
                 "tts_models": [settings.elevenlabs_tts_model, settings.elevenlabs_tts_alt_model],
             },
+            {
+                "id": "elevenlabs_pipeline",
+                "label": "ElevenLabs Scribe -> GPT-4.1 mini -> ElevenLabs",
+                "stt_provider": "elevenlabs",
+                "stt_models": [settings.elevenlabs_stt_model],
+                "llm_provider": "openai",
+                "llm_model": settings.cascaded_llm_model,
+                "tts_provider": "elevenlabs",
+                "tts_models": [settings.elevenlabs_tts_model, settings.elevenlabs_tts_alt_model],
+            },
         ],
         "agents": [
             "callcenteragent",
@@ -190,8 +200,8 @@ async def callcenter_realtime_ws(websocket: WebSocket) -> None:
     architecture = websocket.query_params.get("architecture") or settings.voice_provider
     if architecture == "openai_native" and settings.voice_provider == "openai_native":
         architecture = "cascaded_pipeline"
-    if architecture == "cascaded_pipeline":
-        runtime = CallCenterCascadedRuntime(settings)
+    if architecture in {"cascaded_pipeline", "elevenlabs_pipeline"}:
+        runtime = CallCenterCascadedRuntime(settings, architecture=architecture)
     else:
         runtime = CallCenterRealtimeRuntime(settings)
     await runtime.serve(

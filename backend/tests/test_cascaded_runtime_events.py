@@ -83,6 +83,11 @@ class FakeTranscriber:
         """Initialize this object with the dependencies it needs for the surrounding backend workflow."""
         self.events: asyncio.Queue[TranscriptEvent] = asyncio.Queue()
         self.aggregator = DeepgramTranscriptAggregator("nova-3")
+        self.transcribe_text = ""
+
+    async def transcribe_pcm(self, audio: bytes) -> str:
+        """Return the configured test transcript for push-to-talk tests."""
+        return self.transcribe_text
 
 
 @pytest.mark.asyncio
@@ -186,6 +191,7 @@ async def test_cascaded_runtime_interrupts_active_response_on_speech_started() -
         await asyncio.sleep(60)
 
     runtime._response_task = asyncio.create_task(long_response())
+    runtime._gated_audio_active = True
     task = asyncio.create_task(
         runtime._consume_transcripts(
             websocket,
@@ -206,7 +212,114 @@ async def test_cascaded_runtime_interrupts_active_response_on_speech_started() -
 
     assert runtime._response_task.cancelled()
     assert {"type": "audio_interrupted"} in websocket.messages
-    assert {"type": "speech_started"} in websocket.messages
+    assert {"type": "speech_started", "accepted": True} in websocket.messages
+
+
+@pytest.mark.asyncio
+async def test_cascaded_runtime_ignores_ungated_speech_started_for_interrupt() -> None:
+    """Verify provider VAD cannot interrupt assistant audio unless client speech passed the gate."""
+    runtime = CallCenterCascadedRuntime(Settings(OPENAI_API_KEY="sk-test"))
+    websocket = FakeWebSocket()
+    transcriber = FakeTranscriber()
+
+    async def long_response() -> None:
+        await asyncio.sleep(60)
+
+    runtime._response_task = asyncio.create_task(long_response())
+    task = asyncio.create_task(
+        runtime._consume_transcripts(
+            websocket,
+            transcriber,
+            starting_agent=object(),
+            context=CallCenterContext(session_id="session", trace_id="trace"),
+            session=object(),
+            tts_adapter=None,
+        )
+    )
+    await transcriber.events.put(
+        TranscriptEvent("speech_started", "", False, False, {"type": "SpeechStarted"})
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert not runtime._response_task.cancelled()
+    runtime._response_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await runtime._response_task
+    assert {"type": "audio_interrupted"} not in websocket.messages
+    assert {"type": "speech_started", "accepted": False} in websocket.messages
+
+
+@pytest.mark.asyncio
+async def test_cascaded_runtime_empty_final_transcript_does_not_start_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify empty STT finals are observable but never start workflow turns."""
+    runtime = CallCenterCascadedRuntime(Settings(OPENAI_API_KEY="sk-test"))
+    websocket = FakeWebSocket()
+    transcriber = FakeTranscriber()
+    started_turns: list[str] = []
+
+    async def fake_start_agent_turn(*args, **kwargs):
+        started_turns.append(kwargs["text"])
+
+    monkeypatch.setattr(runtime, "_start_agent_turn", fake_start_agent_turn)
+    task = asyncio.create_task(
+        runtime._consume_transcripts(
+            websocket,
+            transcriber,
+            starting_agent=object(),
+            context=CallCenterContext(session_id="session", trace_id="trace"),
+            session=object(),
+            tts_adapter=None,
+        )
+    )
+    await transcriber.events.put(TranscriptEvent("stt_final", "   ", True, True, {}))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert started_turns == []
+    assert {"type": "turn_detected", "text": ""} not in websocket.messages
+
+
+@pytest.mark.asyncio
+async def test_cascaded_runtime_empty_ptt_transcript_does_not_start_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify noise-only push-to-talk audio can complete transcription without starting a workflow."""
+    runtime = CallCenterCascadedRuntime(Settings(OPENAI_API_KEY="sk-test"))
+    websocket = FakeWebSocket()
+    transcriber = FakeTranscriber()
+    runtime._ptt_audio_buffer = bytearray(b"\x01\x00" * 100)
+    started_turns: list[str] = []
+
+    async def fake_start_agent_turn(*args, **kwargs):
+        started_turns.append(kwargs["text"])
+
+    monkeypatch.setattr(runtime, "_start_agent_turn", fake_start_agent_turn)
+
+    await runtime._commit_ptt_audio(
+        websocket,
+        transcriber,
+        starting_agent=object(),
+        context=CallCenterContext(session_id="session", trace_id="trace"),
+        session=object(),
+        tts_adapter=None,
+    )
+
+    assert started_turns == []
+    assert websocket.messages == [
+        {
+            "type": "stt_final",
+            "text": "",
+            "is_final": True,
+            "speech_final": True,
+        }
+    ]
 
 
 def test_cascaded_handoff_intro_uses_named_agents() -> None:
