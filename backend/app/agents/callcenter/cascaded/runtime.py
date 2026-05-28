@@ -232,6 +232,11 @@ class CallCenterCascadedRuntime:
                 api_key=self.settings.elevenlabs_api_key,
                 model=self.settings.elevenlabs_stt_model,
                 sample_rate=self.settings.cascaded_input_sample_rate,
+                commit_strategy=self.settings.elevenlabs_stt_commit_strategy,
+                vad_silence_threshold_secs=self.settings.elevenlabs_stt_vad_silence_threshold_secs,
+                vad_threshold=self.settings.elevenlabs_stt_vad_threshold,
+                min_speech_duration_ms=self.settings.elevenlabs_stt_min_speech_duration_ms,
+                min_silence_duration_ms=self.settings.elevenlabs_stt_min_silence_duration_ms,
                 open_timeout_seconds=self.settings.cascaded_provider_timeout_seconds,
             )
         if not self.settings.deepgram_api_key:
@@ -592,11 +597,13 @@ class CallCenterCascadedRuntime:
                     active_agent_name,
                     is_verified=context.verified,
                 )
+                should_run_agent = True
                 if direct_handoff_agent_name and direct_handoff_agent_name in self.agents:
                     previous_agent_name = active_agent_name
                     active_agent_name = direct_handoff_agent_name
                     context.current_agent_name = active_agent_name
                     run_agent = self.agents[direct_handoff_agent_name]
+                    should_run_agent = not _is_transfer_only_request(text, direct_handoff_agent_name)
                     display_name, team = _agent_display_details(direct_handoff_agent_name)
                     await websocket.send_json(
                         {
@@ -617,83 +624,84 @@ class CallCenterCascadedRuntime:
                     await sentence_queue.put((handoff_intro, True, active_agent_name))
                     pending_handoff_agent_name = active_agent_name
 
-                result = Runner.run_streamed(
-                    run_agent,
-                    input=text,
-                    context=context,
-                    session=session,
-                    max_turns=MAX_AGENT_TURNS,
-                )
+                if should_run_agent:
+                    result = Runner.run_streamed(
+                        run_agent,
+                        input=text,
+                        context=context,
+                        session=session,
+                        max_turns=MAX_AGENT_TURNS,
+                    )
 
-                async for event in result.stream_events():
-                    delta = _extract_text_delta(event)
-                    if delta:
-                        if metrics.llm_first_token_ms is None:
-                            metrics.llm_first_token_ms = metrics.mark_ms()
-                        for sentence in sentence_buffer.add(delta):
-                            if _should_skip_agent_sentence(sentence, active_agent_name, pending_handoff_agent_name):
-                                continue
+                    async for event in result.stream_events():
+                        delta = _extract_text_delta(event)
+                        if delta:
+                            if metrics.llm_first_token_ms is None:
+                                metrics.llm_first_token_ms = metrics.mark_ms()
+                            for sentence in sentence_buffer.add(delta):
+                                if _should_skip_agent_sentence(sentence, active_agent_name, pending_handoff_agent_name):
+                                    continue
+                                pending_handoff_agent_name = None
+                                if metrics.first_sentence_ms is None:
+                                    metrics.first_sentence_ms = metrics.mark_ms()
+                                assistant_text_parts.append(f"{sentence} ")
+                                await sentence_queue.put((sentence, handoff_transfer_pending, active_agent_name))
+                                handoff_transfer_pending = False
+                            continue
+
+                        if getattr(event, "type", None) == "agent_updated_stream_event":
+                            new_agent_name = event.new_agent.name
+                            if new_agent_name != active_agent_name:
+                                previous_agent_name = active_agent_name
+                                display_name, team = _agent_display_details(new_agent_name)
+                                pre_handoff_remaining = sentence_buffer.flush()
+                                if pre_handoff_remaining and not _should_skip_pre_handoff_sentence(
+                                    pre_handoff_remaining,
+                                    new_agent_name,
+                                ):
+                                    if metrics.first_sentence_ms is None:
+                                        metrics.first_sentence_ms = metrics.mark_ms()
+                                    assistant_text_parts.append(f"{pre_handoff_remaining} ")
+                                    await sentence_queue.put(
+                                        (pre_handoff_remaining, handoff_transfer_pending, previous_agent_name)
+                                    )
+                                    handoff_transfer_pending = False
+                                await websocket.send_json(
+                                    {
+                                        "type": "handoff",
+                                        "from_agent": previous_agent_name,
+                                        "to_agent": new_agent_name,
+                                        "to_agent_display_name": display_name,
+                                        "to_agent_team": team,
+                                    }
+                                )
+                                handoff_outro = _handoff_outro(previous_agent_name, new_agent_name)
+                                handoff_intro = _handoff_intro(previous_agent_name, new_agent_name)
+                                if metrics.first_sentence_ms is None:
+                                    metrics.first_sentence_ms = metrics.mark_ms()
+                                assistant_text_parts.append(f"{handoff_outro} ")
+                                await sentence_queue.put((handoff_outro, False, previous_agent_name))
+                                active_agent_name = new_agent_name
+                                context.current_agent_name = active_agent_name
+                                if metrics.first_sentence_ms is None:
+                                    metrics.first_sentence_ms = metrics.mark_ms()
+                                assistant_text_parts.append(f"{handoff_intro} ")
+                                await sentence_queue.put((handoff_intro, True, active_agent_name))
+                                handoff_transfer_pending = False
+                                pending_handoff_agent_name = active_agent_name
+                            continue
+
+                        if getattr(event, "type", None) == "run_item_stream_event":
+                            await self._send_run_item_event(websocket, event, active_agent_name)
+
+                    remaining = sentence_buffer.flush()
+                    if remaining:
+                        if not _should_skip_agent_sentence(remaining, active_agent_name, pending_handoff_agent_name):
                             pending_handoff_agent_name = None
                             if metrics.first_sentence_ms is None:
                                 metrics.first_sentence_ms = metrics.mark_ms()
-                            assistant_text_parts.append(f"{sentence} ")
-                            await sentence_queue.put((sentence, handoff_transfer_pending, active_agent_name))
-                            handoff_transfer_pending = False
-                        continue
-
-                    if getattr(event, "type", None) == "agent_updated_stream_event":
-                        new_agent_name = event.new_agent.name
-                        if new_agent_name != active_agent_name:
-                            previous_agent_name = active_agent_name
-                            display_name, team = _agent_display_details(new_agent_name)
-                            pre_handoff_remaining = sentence_buffer.flush()
-                            if pre_handoff_remaining and not _should_skip_pre_handoff_sentence(
-                                pre_handoff_remaining,
-                                new_agent_name,
-                            ):
-                                if metrics.first_sentence_ms is None:
-                                    metrics.first_sentence_ms = metrics.mark_ms()
-                                assistant_text_parts.append(f"{pre_handoff_remaining} ")
-                                await sentence_queue.put(
-                                    (pre_handoff_remaining, handoff_transfer_pending, previous_agent_name)
-                                )
-                                handoff_transfer_pending = False
-                            await websocket.send_json(
-                                {
-                                    "type": "handoff",
-                                    "from_agent": previous_agent_name,
-                                    "to_agent": new_agent_name,
-                                    "to_agent_display_name": display_name,
-                                    "to_agent_team": team,
-                                }
-                            )
-                            handoff_outro = _handoff_outro(previous_agent_name, new_agent_name)
-                            handoff_intro = _handoff_intro(previous_agent_name, new_agent_name)
-                            if metrics.first_sentence_ms is None:
-                                metrics.first_sentence_ms = metrics.mark_ms()
-                            assistant_text_parts.append(f"{handoff_outro} ")
-                            await sentence_queue.put((handoff_outro, False, previous_agent_name))
-                            active_agent_name = new_agent_name
-                            context.current_agent_name = active_agent_name
-                            if metrics.first_sentence_ms is None:
-                                metrics.first_sentence_ms = metrics.mark_ms()
-                            assistant_text_parts.append(f"{handoff_intro} ")
-                            await sentence_queue.put((handoff_intro, True, active_agent_name))
-                            handoff_transfer_pending = False
-                            pending_handoff_agent_name = active_agent_name
-                        continue
-
-                    if getattr(event, "type", None) == "run_item_stream_event":
-                        await self._send_run_item_event(websocket, event, active_agent_name)
-
-                remaining = sentence_buffer.flush()
-                if remaining:
-                    if not _should_skip_agent_sentence(remaining, active_agent_name, pending_handoff_agent_name):
-                        pending_handoff_agent_name = None
-                        if metrics.first_sentence_ms is None:
-                            metrics.first_sentence_ms = metrics.mark_ms()
-                        assistant_text_parts.append(f"{remaining} ")
-                        await sentence_queue.put((remaining, handoff_transfer_pending, active_agent_name))
+                            assistant_text_parts.append(f"{remaining} ")
+                            await sentence_queue.put((remaining, handoff_transfer_pending, active_agent_name))
 
             await sentence_queue.put(None)
             await tts_worker
@@ -949,6 +957,32 @@ def _direct_handoff_agent_name(
     if active_agent_name != "supervisorAgent" and any(term in normalized for term in supervisor_terms):
         return "supervisorAgent"
 
+    explicit_billing_terms = (
+        " transfer back to billing",
+        " transfer me back to billing",
+        " back to billing",
+        " billing agent",
+        " billing specialist",
+        " billing team",
+        " transfer to billing",
+        " transfer me to billing",
+    )
+    if active_agent_name != "billingAgent" and any(term in normalized for term in explicit_billing_terms):
+        return "billingAgent"
+
+    explicit_technical_terms = (
+        " transfer back to technical",
+        " transfer me back to technical",
+        " back to technical",
+        " technical support agent",
+        " technical support specialist",
+        " technical support team",
+        " transfer to technical",
+        " transfer me to technical",
+    )
+    if active_agent_name != "technicalSupportAgent" and any(term in normalized for term in explicit_technical_terms):
+        return "technicalSupportAgent"
+
     billing_terms = (
         " bill ",
         " billing ",
@@ -1020,6 +1054,64 @@ def _direct_handoff_agent_name(
     if any(term in normalized for term in technical_terms):
         return "technicalSupportAgent"
     return None
+
+
+def _is_transfer_only_request(text: str, target_agent_name: str) -> bool:
+    """Detect caller turns that only ask to move agents, without a substantive support question."""
+    normalized = " ".join(text.lower().strip().strip(".?!").split())
+    if not normalized:
+        return False
+
+    target_terms = {
+        "billingAgent": ("billing", "billing agent", "billing specialist", "billing team"),
+        "technicalSupportAgent": (
+            "technical",
+            "technical support",
+            "technical support agent",
+            "technical support team",
+        ),
+        "retentionAgent": ("retention", "retention agent", "retention specialist", "retention team"),
+        "supervisorAgent": ("supervisor", "manager", "floor supervisor"),
+    }
+    if not any(term in normalized for term in target_terms.get(target_agent_name, ())):
+        return False
+
+    transfer_words = ("transfer", "connect", "send", "route", "back")
+    if not any(word in normalized for word in transfer_words):
+        return False
+
+    filler_words = {
+        "can",
+        "could",
+        "u",
+        "you",
+        "please",
+        "pls",
+        "me",
+        "i",
+        "want",
+        "wanna",
+        "would",
+        "like",
+        "to",
+        "the",
+        "agent",
+        "specialist",
+        "team",
+        "department",
+        "back",
+        "transfer",
+        "connect",
+        "send",
+        "route",
+        "with",
+    }
+    substantive_words = [
+        word
+        for word in normalized.replace("?", "").split()
+        if word not in filler_words and not any(word in term.split() for term in target_terms[target_agent_name])
+    ]
+    return len(substantive_words) <= 1
 
 
 def _fixed_response_for_user_text(

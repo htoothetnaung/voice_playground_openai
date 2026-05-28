@@ -44,20 +44,34 @@ class Settings(BaseSettings):
     deepgram_utterance_end_ms: int = Field(default=1000, alias="DEEPGRAM_UTTERANCE_END_MS")
     elevenlabs_api_key: str | None = Field(default=None, alias="ELEVENLABS_API_KEY")
     elevenlabs_stt_model: str = Field(default="scribe_v2_realtime", alias="ELEVENLABS_STT_MODEL")
+    elevenlabs_stt_commit_strategy: str = Field(default="vad", alias="ELEVENLABS_STT_COMMIT_STRATEGY")
     elevenlabs_stt_commit_silence_ms: int = Field(default=250, alias="ELEVENLABS_STT_COMMIT_SILENCE_MS")
+    elevenlabs_stt_vad_silence_threshold_secs: float = Field(
+        default=0.9,
+        alias="ELEVENLABS_STT_VAD_SILENCE_THRESHOLD_SECS",
+    )
+    elevenlabs_stt_vad_threshold: float = Field(default=0.35, alias="ELEVENLABS_STT_VAD_THRESHOLD")
+    elevenlabs_stt_min_speech_duration_ms: int = Field(
+        default=120,
+        alias="ELEVENLABS_STT_MIN_SPEECH_DURATION_MS",
+    )
+    elevenlabs_stt_min_silence_duration_ms: int = Field(
+        default=350,
+        alias="ELEVENLABS_STT_MIN_SILENCE_DURATION_MS",
+    )
     elevenlabs_tts_model: str = Field(default="eleven_flash_v2_5", alias="ELEVENLABS_TTS_MODEL")
     elevenlabs_tts_alt_model: str = Field(default="eleven_turbo_v2_5", alias="ELEVENLABS_TTS_ALT_MODEL")
     elevenlabs_voice_id: str = Field(default="JBFqnCBsd6RMkjVDRZzb", alias="ELEVENLABS_VOICE_ID")
     elevenlabs_voice_callcenter: str = Field(
-        default="21m00Tcm4TlvDq8ikWAM",
+        default="SEWXl8lPSO01tdGbWECX",
         alias="ELEVENLABS_VOICE_CALLCENTER",
     )
     elevenlabs_voice_billing: str = Field(
-        default="pNInz6obpgDQGcFmaJgB",
+        default="8AMr87HV4PA3NKEl5q4O",
         alias="ELEVENLABS_VOICE_BILLING",
     )
     elevenlabs_voice_technical_support: str = Field(
-        default="nPczCjzI2devNBz1zQrb",
+        default="OAQQSa5rh6bJe9HgSD5E",
         alias="ELEVENLABS_VOICE_TECHNICAL_SUPPORT",
     )
     elevenlabs_voice_retention: str = Field(
@@ -65,14 +79,14 @@ class Settings(BaseSettings):
         alias="ELEVENLABS_VOICE_RETENTION",
     )
     elevenlabs_voice_supervisor: str = Field(
-        default="EXAVITQu4vr4xnSDxMaL",
+        default="SDNKIYEpTz0h56jQX8rA",
         alias="ELEVENLABS_VOICE_SUPERVISOR",
     )
     elevenlabs_voice_human_escalation: str = Field(
         default="TxGEqnHWrfWFTfGW9XjX",
         alias="ELEVENLABS_VOICE_HUMAN_ESCALATION",
     )
-    cascaded_input_sample_rate: int = Field(default=24000, alias="CASCADED_INPUT_SAMPLE_RATE")
+    cascaded_input_sample_rate: int = Field(default=16000, alias="CASCADED_INPUT_SAMPLE_RATE")
     cascaded_output_sample_rate: int = Field(default=24000, alias="CASCADED_OUTPUT_SAMPLE_RATE")
     cascaded_provider_timeout_seconds: float = Field(
         default=30.0,

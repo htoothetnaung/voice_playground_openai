@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import json
 import logging
 from typing import Any
-from urllib.parse import urlencode
 
 from app.agents.callcenter.cascaded.deepgram import TranscriptEvent
 
@@ -29,16 +27,25 @@ class ElevenLabsRealtimeTranscriber:
         api_key: str,
         model: str,
         sample_rate: int,
+        commit_strategy: str = "vad",
+        vad_silence_threshold_secs: float = 0.9,
+        vad_threshold: float = 0.35,
+        min_speech_duration_ms: int = 120,
+        min_silence_duration_ms: int = 350,
         open_timeout_seconds: float = 30.0,
     ) -> None:
         self.api_key = api_key
         self.model = model
         self.sample_rate = sample_rate
+        self.commit_strategy = commit_strategy.lower().strip() or "vad"
+        self.vad_silence_threshold_secs = vad_silence_threshold_secs
+        self.vad_threshold = vad_threshold
+        self.min_speech_duration_ms = min_speech_duration_ms
+        self.min_silence_duration_ms = min_silence_duration_ms
         self.open_timeout_seconds = open_timeout_seconds
         self.events: asyncio.Queue[TranscriptEvent] = asyncio.Queue()
         self.aggregator = _EmptyTranscriptAggregator()
-        self._socket: Any | None = None
-        self._receiver_task: asyncio.Task[None] | None = None
+        self._connection: Any | None = None
         self._send_lock = asyncio.Lock()
         self._closed = False
 
@@ -54,9 +61,10 @@ class ElevenLabsRealtimeTranscriber:
         await self._send_audio_chunk(audio, commit=False)
 
     async def flush_audio(self, duration_ms: int = 250) -> None:
-        """Commit the current utterance by sending a short silence chunk with commit=true."""
-        bytes_per_ms = self.sample_rate * 2 / 1000
-        await self._send_audio_chunk(bytes(round(bytes_per_ms * duration_ms)), commit=True)
+        """Commit the current utterance for manual mode; VAD mode commits on server speech end."""
+        if self.commit_strategy == "vad":
+            return
+        await self._send_audio_chunk(b"", commit=True)
 
     async def transcribe_pcm(self, audio: bytes) -> str:
         """Transcribe a push-to-talk PCM clip through a short-lived realtime session."""
@@ -67,11 +75,13 @@ class ElevenLabsRealtimeTranscriber:
             api_key=self.api_key,
             model=self.model,
             sample_rate=self.sample_rate,
+            commit_strategy="manual",
             open_timeout_seconds=self.open_timeout_seconds,
         )
         await transcriber.start()
         try:
-            await transcriber._send_audio_chunk(audio, commit=True)
+            await transcriber._send_audio_chunk(audio, commit=False)
+            await transcriber._send_audio_chunk(b"", commit=True)
             while True:
                 event = await asyncio.wait_for(
                     transcriber.events.get(),
@@ -85,90 +95,115 @@ class ElevenLabsRealtimeTranscriber:
     async def close(self) -> None:
         """Cancel background receive work and close the provider socket."""
         self._closed = True
-        if self._receiver_task and not self._receiver_task.done():
-            self._receiver_task.cancel()
-        if self._socket is not None:
+        if self._connection is not None:
             try:
-                await self._socket.close()
+                await self._connection.close()
             except Exception:
                 pass
-        self._socket = None
+        self._connection = None
 
     async def _open_socket(self) -> None:
-        import websockets
+        from elevenlabs.realtime import ScribeRealtime
 
         logger.info("Opening ElevenLabs Scribe realtime STT stream", extra={"model": self.model})
-        self._socket = await websockets.connect(
-            self._url(),
-            additional_headers={"xi-api-key": self.api_key},
-            ping_interval=20,
-            ping_timeout=20,
-            open_timeout=self.open_timeout_seconds,
-        )
-        self._receiver_task = asyncio.create_task(self._receive_loop())
+        client = ScribeRealtime(api_key=self.api_key)
+        self._connection = await client.connect(self._connection_options())
+        self._register_connection_handlers(self._connection)
 
     async def _send_audio_chunk(self, audio: bytes, *, commit: bool) -> None:
-        payload = {
-            "message_type": "input_audio_chunk",
-            "audio_base_64": base64.b64encode(audio).decode("ascii"),
-            "commit": commit,
-            "sample_rate": self.sample_rate,
-        }
         async with self._send_lock:
-            if self._socket is None:
+            if self._connection is None:
                 await self._restart_socket()
             try:
-                if self._socket is not None:
-                    await self._socket.send(json.dumps(payload))
+                if self._connection is not None:
+                    if commit:
+                        await self._connection.commit()
+                    else:
+                        await self._connection.send(
+                            {"audio_base_64": base64.b64encode(audio).decode("ascii")}
+                        )
                     return
             except _transient_connection_errors():
                 await self._restart_socket()
-                if self._socket is not None:
-                    await self._socket.send(json.dumps(payload))
+                if self._connection is not None:
+                    if commit:
+                        await self._connection.commit()
+                    else:
+                        await self._connection.send(
+                            {"audio_base_64": base64.b64encode(audio).decode("ascii")}
+                        )
 
     async def _restart_socket(self) -> None:
         """Open a fresh realtime stream after the provider closes a completed session."""
         if self._closed:
             return
-        if self._receiver_task and not self._receiver_task.done():
-            self._receiver_task.cancel()
-        if self._socket is not None:
+        if self._connection is not None:
             try:
-                await self._socket.close()
+                await self._connection.close()
             except Exception:
                 pass
-        self._socket = None
+        self._connection = None
         await self._open_socket()
 
-    def _url(self) -> str:
-        params = {
-            "model_id": self.model,
-            "audio_format": f"pcm_{self.sample_rate}",
-            "commit_strategy": "manual",
-            "no_verbatim": "true",
-            "enable_logging": "true",
-        }
-        return f"wss://api.elevenlabs.io/v1/speech-to-text/realtime?{urlencode(params)}"
+    def _connection_options(self) -> dict[str, Any]:
+        from elevenlabs.realtime import CommitStrategy
 
-    async def _receive_loop(self) -> None:
-        assert self._socket is not None
-        try:
-            async for raw_message in self._socket:
-                if isinstance(raw_message, bytes):
-                    continue
-                try:
-                    message = json.loads(raw_message)
-                except json.JSONDecodeError:
-                    continue
-                event = _normalize_scribe_event(message)
-                if event is not None:
-                    await self.events.put(event)
-        except _transient_connection_errors():
+        options: dict[str, Any] = {
+            "model_id": self.model,
+            "audio_format": _audio_format_for_sample_rate(self.sample_rate),
+            "sample_rate": self.sample_rate,
+            "commit_strategy": CommitStrategy.VAD
+            if self.commit_strategy == "vad"
+            else CommitStrategy.MANUAL,
+        }
+        if self.commit_strategy == "vad":
+            options.update(
+                {
+                    "vad_silence_threshold_secs": self.vad_silence_threshold_secs,
+                    "vad_threshold": self.vad_threshold,
+                    "min_speech_duration_ms": self.min_speech_duration_ms,
+                    "min_silence_duration_ms": self.min_silence_duration_ms,
+                }
+            )
+        return options
+
+    def _register_connection_handlers(self, connection: Any) -> None:
+        from elevenlabs.realtime import RealtimeEvents
+
+        def enqueue_transcript(message: dict[str, Any]) -> None:
+            event = _normalize_scribe_event(message)
+            if event is not None:
+                self.events.put_nowait(event)
+
+        def log_error(message: dict[str, Any]) -> None:
+            logger.warning("ElevenLabs realtime STT error: %s", message.get("error") or message)
+
+        def mark_closed(*_: Any) -> None:
             if not self._closed:
-                self._socket = None
-        finally:
-            if not self._closed:
-                self._socket = None
+                self._connection = None
+
+        connection.on(RealtimeEvents.PARTIAL_TRANSCRIPT, enqueue_transcript)
+        connection.on(RealtimeEvents.COMMITTED_TRANSCRIPT, enqueue_transcript)
+        connection.on(RealtimeEvents.COMMITTED_TRANSCRIPT_WITH_TIMESTAMPS, enqueue_transcript)
+        connection.on(RealtimeEvents.ERROR, log_error)
+        connection.on(RealtimeEvents.CLOSE, mark_closed)
+
+
+def _audio_format_for_sample_rate(sample_rate: int) -> Any:
+    from elevenlabs.realtime import AudioFormat
+
+    formats = {
+        8000: AudioFormat.PCM_8000,
+        16000: AudioFormat.PCM_16000,
+        22050: AudioFormat.PCM_22050,
+        24000: AudioFormat.PCM_24000,
+        44100: AudioFormat.PCM_44100,
+        48000: AudioFormat.PCM_48000,
+    }
+    try:
+        return formats[sample_rate]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported ElevenLabs realtime PCM sample rate: {sample_rate}") from exc
 
 
 def _normalize_scribe_event(message: dict[str, Any]) -> TranscriptEvent | None:

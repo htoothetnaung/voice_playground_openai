@@ -1,30 +1,40 @@
 """Tests for the ElevenLabs Scribe realtime STT adapter."""
 
 import base64
-import json
 
 import pytest
 
 from app.agents.callcenter.cascaded.elevenlabs_stt import (
     ElevenLabsRealtimeTranscriber,
+    _audio_format_for_sample_rate,
     _normalize_scribe_event,
 )
 
 
-def test_elevenlabs_realtime_url_uses_scribe_v2_manual_pcm() -> None:
-    """Verify the realtime STT URL matches the documented Scribe websocket contract."""
+def test_elevenlabs_realtime_options_use_scribe_v2_vad_pcm_16k() -> None:
+    """Verify the SDK connection options use Scribe realtime with provider VAD."""
     transcriber = ElevenLabsRealtimeTranscriber(
         api_key="eleven-key",
         model="scribe_v2_realtime",
-        sample_rate=24000,
+        sample_rate=16000,
     )
 
-    url = transcriber._url()
+    options = transcriber._connection_options()
 
-    assert url.startswith("wss://api.elevenlabs.io/v1/speech-to-text/realtime?")
-    assert "model_id=scribe_v2_realtime" in url
-    assert "audio_format=pcm_24000" in url
-    assert "commit_strategy=manual" in url
+    assert options["model_id"] == "scribe_v2_realtime"
+    assert str(options["audio_format"]) == "AudioFormat.PCM_16000"
+    assert options["sample_rate"] == 16000
+    assert str(options["commit_strategy"]) == "CommitStrategy.VAD"
+    assert options["vad_silence_threshold_secs"] == 0.9
+    assert options["vad_threshold"] == 0.35
+    assert options["min_speech_duration_ms"] == 120
+    assert options["min_silence_duration_ms"] == 350
+
+
+def test_elevenlabs_audio_format_rejects_unsupported_sample_rate() -> None:
+    """Unsupported browser sample rates should fail before opening a provider socket."""
+    with pytest.raises(ValueError, match="Unsupported ElevenLabs realtime PCM sample rate"):
+        _audio_format_for_sample_rate(12345)
 
 
 def test_elevenlabs_normalizes_partial_and_committed_transcripts() -> None:
@@ -48,59 +58,60 @@ def test_elevenlabs_normalizes_partial_and_committed_transcripts() -> None:
 
 @pytest.mark.asyncio
 async def test_elevenlabs_send_audio_chunk_uses_documented_payload() -> None:
-    """Verify audio is sent as base64 input_audio_chunk JSON."""
-    sent_messages: list[str] = []
+    """Verify audio is sent through the SDK connection as base64 PCM."""
+    sent_messages: list[dict] = []
+    commit_count = 0
 
-    class FakeSocket:
-        async def send(self, message: str) -> None:
+    class FakeConnection:
+        async def send(self, message: dict) -> None:
             sent_messages.append(message)
+
+        async def commit(self) -> None:
+            nonlocal commit_count
+            commit_count += 1
 
     transcriber = ElevenLabsRealtimeTranscriber(
         api_key="eleven-key",
         model="scribe_v2_realtime",
-        sample_rate=24000,
+        sample_rate=16000,
     )
-    transcriber._socket = FakeSocket()
+    transcriber._connection = FakeConnection()
 
-    await transcriber._send_audio_chunk(b"\x01\x02", commit=True)
+    await transcriber._send_audio_chunk(b"\x01\x02", commit=False)
+    await transcriber._send_audio_chunk(b"", commit=True)
 
-    payload = json.loads(sent_messages[0])
-    assert payload == {
-        "message_type": "input_audio_chunk",
-        "audio_base_64": base64.b64encode(b"\x01\x02").decode("ascii"),
-        "commit": True,
-        "sample_rate": 24000,
-    }
+    assert sent_messages == [{"audio_base_64": base64.b64encode(b"\x01\x02").decode("ascii")}]
+    assert commit_count == 1
 
 
 @pytest.mark.asyncio
 async def test_elevenlabs_send_audio_chunk_reopens_closed_stream() -> None:
     """Verify a clean provider close does not make the next user utterance fail."""
-    sent_messages: list[str] = []
+    sent_messages: list[dict] = []
     restart_count = 0
 
-    class FakeSocket:
-        async def send(self, message: str) -> None:
+    class FakeConnection:
+        async def send(self, message: dict) -> None:
             sent_messages.append(message)
+
+        async def commit(self) -> None:
+            pass
 
     transcriber = ElevenLabsRealtimeTranscriber(
         api_key="eleven-key",
         model="scribe_v2_realtime",
-        sample_rate=24000,
+        sample_rate=16000,
     )
 
     async def fake_restart_socket() -> None:
         nonlocal restart_count
         restart_count += 1
-        transcriber._socket = FakeSocket()
+        transcriber._connection = FakeConnection()
 
-    transcriber._socket = None
+    transcriber._connection = None
     transcriber._restart_socket = fake_restart_socket  # type: ignore[method-assign]
 
     await transcriber._send_audio_chunk(b"\x03\x04", commit=False)
 
     assert restart_count == 1
-    payload = json.loads(sent_messages[0])
-    assert payload["message_type"] == "input_audio_chunk"
-    assert payload["audio_base_64"] == base64.b64encode(b"\x03\x04").decode("ascii")
-    assert payload["commit"] is False
+    assert sent_messages[0]["audio_base_64"] == base64.b64encode(b"\x03\x04").decode("ascii")

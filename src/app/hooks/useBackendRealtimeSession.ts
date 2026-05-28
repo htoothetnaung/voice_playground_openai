@@ -11,7 +11,8 @@ import {
 } from "../lib/speechActivityGate";
 import { SessionStatus } from "../types";
 
-const PCM_SAMPLE_RATE = 24000;
+const INPUT_PCM_SAMPLE_RATE = 16000;
+const OUTPUT_PCM_SAMPLE_RATE = 24000;
 const AUDIO_START_LOOKAHEAD_SECONDS = 0.06;
 const TRANSFER_AUDIO_SETTLE_MS = 120;
 const BACKEND_REALTIME_PATH = "/api/v1/callcenter/realtime/ws";
@@ -29,6 +30,12 @@ export type MicMeterState = {
 type QueuedAudio = {
   data: string;
   agentName?: string;
+};
+
+type PendingTransferCue = {
+  agentName?: string;
+  durationMs: number;
+  preTransferQueueItems: number;
 };
 
 export interface BackendRealtimeSessionCallbacks {
@@ -125,7 +132,7 @@ function int16ToAudioBuffer(
   for (let i = 0; i < samples.length; i += 1) {
     float32[i] = samples[i] / 32768;
   }
-  const audioBuffer = context.createBuffer(1, float32.length, PCM_SAMPLE_RATE);
+  const audioBuffer = context.createBuffer(1, float32.length, OUTPUT_PCM_SAMPLE_RATE);
   audioBuffer.copyToChannel(float32, 0);
   return audioBuffer;
 }
@@ -176,6 +183,7 @@ export function useBackendRealtimeSession(
   const playbackEnabledRef = useRef(true);
   const microphoneEnabledRef = useRef(true);
   const manualPttModeRef = useRef(false);
+  const providerVadModeRef = useRef(false);
   const pttSpeakingRef = useRef(false);
   const activeOutputSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const audioQueueRef = useRef<QueuedAudio[]>([]);
@@ -184,7 +192,8 @@ export function useBackendRealtimeSession(
   const playbackGenerationRef = useRef(0);
   const transferGateActiveRef = useRef(false);
   const transferGateTimerRef = useRef<number | null>(null);
-  const pendingTransferDurationMsRef = useRef<number | null>(null);
+  const pendingTransferCueRef = useRef<PendingTransferCue | null>(null);
+  const activeTransferAgentNameRef = useRef<string | undefined>(undefined);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
@@ -231,7 +240,8 @@ export function useBackendRealtimeSession(
     playbackGenerationRef.current += 1;
     audioQueueRef.current = [];
     transferGateActiveRef.current = false;
-    pendingTransferDurationMsRef.current = null;
+    pendingTransferCueRef.current = null;
+    activeTransferAgentNameRef.current = undefined;
     if (transferGateTimerRef.current !== null) {
       window.clearTimeout(transferGateTimerRef.current);
       transferGateTimerRef.current = null;
@@ -250,7 +260,7 @@ export function useBackendRealtimeSession(
 
   const ensureOutputAudioContext = useCallback(async () => {
     if (!outputAudioContextRef.current) {
-      outputAudioContextRef.current = new AudioContext({ sampleRate: PCM_SAMPLE_RATE });
+      outputAudioContextRef.current = new AudioContext({ sampleRate: OUTPUT_PCM_SAMPLE_RATE });
     }
     if (outputAudioContextRef.current.state === "suspended") {
       await outputAudioContextRef.current.resume();
@@ -264,25 +274,37 @@ export function useBackendRealtimeSession(
       transferGateTimerRef.current = window.setTimeout(() => {
         transferGateTimerRef.current = null;
         transferGateActiveRef.current = false;
-        pendingTransferDurationMsRef.current = null;
+        callbacksRef.current.onTransferAudioEnd?.(activeTransferAgentNameRef.current);
+        activeTransferAgentNameRef.current = undefined;
         void processAudioQueue();
       }, durationMs + TRANSFER_AUDIO_SETTLE_MS);
     },
     [],
   );
 
-  const maybeStartTransferGateTimer = useCallback(() => {
-    const durationMs = pendingTransferDurationMsRef.current;
-    if (!transferGateActiveRef.current || durationMs == null) return;
-    if (activeOutputSourcesRef.current.length > 0) return;
-    startTransferGateTimer(durationMs);
+  const maybeStartPendingTransferCue = useCallback(() => {
+    const pendingCue = pendingTransferCueRef.current;
+    if (!pendingCue || transferGateActiveRef.current) return false;
+    if (pendingCue.preTransferQueueItems > 0) return false;
+    if (activeOutputSourcesRef.current.length > 0) {
+      return false;
+    }
+    pendingTransferCueRef.current = null;
+    transferGateActiveRef.current = true;
+    activeTransferAgentNameRef.current = pendingCue.agentName;
+    callbacksRef.current.onTransferAudioStart?.(
+      pendingCue.agentName,
+      pendingCue.durationMs,
+    );
+    startTransferGateTimer(pendingCue.durationMs);
+    return true;
   }, [startTransferGateTimer]);
 
   const processAudioQueue = useCallback(async () => {
     if (transferGateActiveRef.current) {
-      maybeStartTransferGateTimer();
       return;
     }
+    if (maybeStartPendingTransferCue()) return;
     if (isProcessingAudioQueueRef.current) return;
     isProcessingAudioQueueRef.current = true;
     const generation = playbackGenerationRef.current;
@@ -294,6 +316,14 @@ export function useBackendRealtimeSession(
       ) {
         const item = audioQueueRef.current.shift();
         if (!item) continue;
+        const pendingCue = pendingTransferCueRef.current;
+        if (pendingCue && pendingCue.preTransferQueueItems <= 0) {
+          audioQueueRef.current.unshift(item);
+          break;
+        }
+        if (pendingCue) {
+          pendingCue.preTransferQueueItems -= 1;
+        }
 
         callbacksRef.current.onAssistantSpeechStart?.(item.agentName);
         if (!playbackEnabledRef.current) continue;
@@ -320,7 +350,7 @@ export function useBackendRealtimeSession(
           );
           if (activeOutputSourcesRef.current.length === 0) {
             callbacksRef.current.onAssistantSpeechEnd?.();
-            maybeStartTransferGateTimer();
+            maybeStartPendingTransferCue();
           }
         };
 
@@ -328,11 +358,18 @@ export function useBackendRealtimeSession(
       }
     } finally {
       isProcessingAudioQueueRef.current = false;
-      if (audioQueueRef.current.length > 0) {
+      const transferCueStarted = maybeStartPendingTransferCue();
+      const pendingCue = pendingTransferCueRef.current;
+      const canContinueAudioQueue =
+        audioQueueRef.current.length > 0 &&
+        !transferCueStarted &&
+        !transferGateActiveRef.current &&
+        (!pendingCue || pendingCue.preTransferQueueItems > 0);
+      if (canContinueAudioQueue) {
         void processAudioQueue();
       }
     }
-  }, [ensureOutputAudioContext, maybeStartTransferGateTimer]);
+  }, [ensureOutputAudioContext, maybeStartPendingTransferCue]);
 
   const handleHistoryItem = useCallback(
     (item: any) => {
@@ -464,17 +501,17 @@ export function useBackendRealtimeSession(
           callbacksRef.current.onAgentHandoff?.(event.to_agent);
           break;
         case "transfer_audio_start":
-          transferGateActiveRef.current = true;
-          pendingTransferDurationMsRef.current =
-            typeof event.duration_ms === "number" ? event.duration_ms : 2500;
-          callbacksRef.current.onTransferAudioStart?.(
-            event.agent_name,
-            event.duration_ms,
-          );
-          maybeStartTransferGateTimer();
+          pendingTransferCueRef.current = {
+            agentName: event.agent_name,
+            durationMs: typeof event.duration_ms === "number" ? event.duration_ms : 2500,
+            preTransferQueueItems: audioQueueRef.current.length,
+          };
+          void processAudioQueue();
           break;
         case "transfer_audio_end":
-          callbacksRef.current.onTransferAudioEnd?.(event.agent_name);
+          // The server's transfer window can end before locally buffered outro
+          // audio has finished playing. Emit the UI callback from the local
+          // transfer timer instead so ringing breadcrumbs match what users hear.
           break;
         case "agent_speech_start":
           addTranscriptBreadcrumb(`Agent speech started: ${event.agent_name}`, {
@@ -549,7 +586,6 @@ export function useBackendRealtimeSession(
       handleHistoryItem,
       handleHistoryUpdate,
       logServerEvent,
-      maybeStartTransferGateTimer,
       processAudioQueue,
       stopPlayback,
     ],
@@ -601,7 +637,7 @@ export function useBackendRealtimeSession(
       },
     });
 
-    const audioContext = new AudioContext({ sampleRate: PCM_SAMPLE_RATE });
+    const audioContext = new AudioContext({ sampleRate: INPUT_PCM_SAMPLE_RATE });
     const sourceNode = audioContext.createMediaStreamSource(stream);
     const processorNode = audioContext.createScriptProcessor(4096, 1, 1);
 
@@ -621,7 +657,7 @@ export function useBackendRealtimeSession(
       const resampledInput = resampleLinear(
         input,
         event.inputBuffer.sampleRate,
-        PCM_SAMPLE_RATE,
+        INPUT_PCM_SAMPLE_RATE,
       );
       const pcmBuffer = float32ToInt16Bytes(resampledInput);
       if (pcmBuffer.byteLength === 0) return;
@@ -637,6 +673,63 @@ export function useBackendRealtimeSession(
         audio: pcmBuffer,
         features: analyzeSpeechFrame(input, frameDurationMs),
       });
+      const useProviderVad = providerVadModeRef.current;
+
+      if (useProviderVad) {
+        if (gateResult.opened) {
+          speechGateSuppressedFramesRef.current = 0;
+          ws.send(
+            JSON.stringify({
+              type: "client_event",
+              event: {
+                type: "speech_gate.open",
+                session_id: sessionIdRef.current,
+                payload: {
+                  type: "speech_gate.open",
+                  providerVad: true,
+                  noiseFloor: gateResult.noiseFloor,
+                  speechThreshold: gateResult.speechThreshold,
+                },
+              },
+            }),
+          );
+          addTranscriptBreadcrumb("Speech gate opened", {
+            mode: "provider_vad_streaming",
+            noiseFloor: Number(gateResult.noiseFloor.toFixed(4)),
+            speechThreshold: Number(gateResult.speechThreshold.toFixed(4)),
+            _breadcrumbType: "session",
+          });
+        }
+
+        if (gateResult.closed) {
+          ws.send(
+            JSON.stringify({
+              type: "client_event",
+              event: {
+                type: "speech_gate.closed",
+                session_id: sessionIdRef.current,
+                payload: {
+                  type: "speech_gate.closed",
+                  providerVad: true,
+                  noiseFloor: gateResult.noiseFloor,
+                  speechThreshold: gateResult.speechThreshold,
+                },
+              },
+            }),
+          );
+          addTranscriptBreadcrumb("Speech gate closed", {
+            mode: "provider_vad_streaming",
+            noiseFloor: Number(gateResult.noiseFloor.toFixed(4)),
+            speechThreshold: Number(gateResult.speechThreshold.toFixed(4)),
+            _breadcrumbType: "session",
+          });
+        }
+
+        hasBufferedAudioRef.current = true;
+        micFramesSentRef.current += 1;
+        ws.send(pcmBuffer);
+        return;
+      }
 
       if (gateResult.suppressed) {
         speechGateSuppressedFramesRef.current += 1;
@@ -751,6 +844,8 @@ export function useBackendRealtimeSession(
       updateStatus("CONNECTING");
       hasBufferedAudioRef.current = false;
       micFramesSentRef.current = 0;
+      providerVadModeRef.current = architecture === "elevenlabs_pipeline";
+      speechGateRef.current.reset();
       await ensureMicrophonePipeline();
       resumeInputAudioContext();
 
@@ -814,6 +909,7 @@ export function useBackendRealtimeSession(
     stopPlayback();
     pttSpeakingRef.current = false;
     manualPttModeRef.current = false;
+    providerVadModeRef.current = false;
     speechGateRef.current.reset();
     speechGateSuppressedFramesRef.current = 0;
     hasBufferedAudioRef.current = false;
@@ -855,6 +951,7 @@ export function useBackendRealtimeSession(
     if (event?.type === "session.update") {
       const turnDetection = event?.session?.audio?.input?.turn_detection;
       manualPttModeRef.current = turnDetection == null;
+      providerVadModeRef.current = providerVadModeRef.current && !manualPttModeRef.current;
       if (!manualPttModeRef.current) {
         speechGateRef.current.reset();
       }
@@ -863,6 +960,7 @@ export function useBackendRealtimeSession(
 
     if (event?.type === "input_audio_buffer.clear") {
       pttSpeakingRef.current = true;
+      providerVadModeRef.current = false;
       speechGateRef.current.reset();
       hasBufferedAudioRef.current = false;
       micFramesSentRef.current = 0;
@@ -935,6 +1033,7 @@ export function useBackendRealtimeSession(
       stopPlayback();
       pttSpeakingRef.current = false;
       manualPttModeRef.current = false;
+      providerVadModeRef.current = false;
       wsRef.current?.close();
       wsRef.current = null;
       sessionIdRef.current = null;

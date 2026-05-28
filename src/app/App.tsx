@@ -91,11 +91,11 @@ function App() {
           durationMs,
           _breadcrumbType: "audio",
         });
-        playTransfer(durationMs ? durationMs + 750 : undefined);
+        playTransfer();
       },
       onTransferAudioEnd: (agentName?: string) => {
         addTranscriptBreadcrumb("Filler audio: transfer window complete", {
-          state: "waiting_for_agent_audio",
+          state: "looping_until_agent_audio",
           targetAgent: agentName,
           _breadcrumbType: "audio",
         });

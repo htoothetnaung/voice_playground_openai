@@ -49,15 +49,15 @@ class Settings(BaseSettings):
     elevenlabs_tts_alt_model: str = Field(default="eleven_turbo_v2_5", alias="ELEVENLABS_TTS_ALT_MODEL")
     elevenlabs_voice_id: str = Field(default="JBFqnCBsd6RMkjVDRZzb", alias="ELEVENLABS_VOICE_ID")
     elevenlabs_voice_callcenter: str = Field(
-        default="21m00Tcm4TlvDq8ikWAM",
+        default="SEWXl8lPSO01tdGbWECX",
         alias="ELEVENLABS_VOICE_CALLCENTER",
     )
     elevenlabs_voice_billing: str = Field(
-        default="pNInz6obpgDQGcFmaJgB",
+        default="8AMr87HV4PA3NKEl5q4O",
         alias="ELEVENLABS_VOICE_BILLING",
     )
     elevenlabs_voice_technical_support: str = Field(
-        default="nPczCjzI2devNBz1zQrb",
+        default="OAQQSa5rh6bJe9HgSD5E",
         alias="ELEVENLABS_VOICE_TECHNICAL_SUPPORT",
     )
     elevenlabs_voice_retention: str = Field(
@@ -65,7 +65,7 @@ class Settings(BaseSettings):
         alias="ELEVENLABS_VOICE_RETENTION",
     )
     elevenlabs_voice_supervisor: str = Field(
-        default="EXAVITQu4vr4xnSDxMaL",
+        default="SDNKIYEpTz0h56jQX8rA",
         alias="ELEVENLABS_VOICE_SUPERVISOR",
     )
     elevenlabs_voice_human_escalation: str = Field(

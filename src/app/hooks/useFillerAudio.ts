@@ -83,7 +83,7 @@ export function useFillerAudio(enabled: boolean = true) {
     }
   }, []);
 
-  const startTransferAudio = useCallback((maxDurationMs: number = 3500) => {
+  const startTransferAudio = useCallback((maxDurationMs?: number) => {
     if (!enabledRef.current) return;
     stopAll(false);
     const audio = transferAudioRef.current;
@@ -91,7 +91,7 @@ export function useFillerAudio(enabled: boolean = true) {
     audio.currentTime = 0;
     audio.load();
     audio.play().catch(() => undefined);
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && typeof maxDurationMs === "number") {
       transferStopTimerRef.current = window.setTimeout(() => {
         stopTransfer();
       }, maxDurationMs);

@@ -14,6 +14,7 @@ from app.agents.callcenter.cascaded.runtime import (
     _fixed_response_for_user_text,
     _handoff_intro,
     _handoff_outro,
+    _is_transfer_only_request,
     _should_skip_agent_sentence,
     _should_skip_handoff_sentence,
     _should_skip_pre_handoff_sentence,
@@ -484,6 +485,24 @@ def test_direct_handoff_requires_verified_context_for_account_questions() -> Non
 def test_direct_handoff_only_runs_from_triage_agent() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     assert _direct_handoff_agent_name("Why is my bill so high?", "billingAgent") is None
+
+
+def test_direct_handoff_routes_explicit_specialist_return_to_billing() -> None:
+    """Explicit transfer-back requests should not rely on the LLM and bounce to retention."""
+    assert (
+        _direct_handoff_agent_name(
+            "can u transfer back to billing",
+            "retentionAgent",
+            is_verified=True,
+        )
+        == "billingAgent"
+    )
+
+
+def test_transfer_only_request_detection_skips_immediate_second_handoff() -> None:
+    """Pure transfer requests should stop after the runtime handoff intro."""
+    assert _is_transfer_only_request("can u transfer back to billing", "billingAgent")
+    assert not _is_transfer_only_request("transfer me to billing because my bill is too high", "billingAgent")
 
 
 def test_direct_handoff_routes_cancellation_from_specialists_to_retention() -> None:
