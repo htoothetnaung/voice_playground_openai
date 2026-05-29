@@ -25,7 +25,7 @@
 module.exports = {
   apps: [
     {
-      name: "atenxion-backend",
+      name: "voice backend",
       cwd: ".",
       script: "uv",
       args:
@@ -44,7 +44,7 @@ module.exports = {
       },
     },
     {
-      name: "atenxion-frontend",
+      name: "voice frontend",
       cwd: ".",
       script: "node_modules/next/dist/bin/next",
       args: "start -p 3014 -H 0.0.0.0",
