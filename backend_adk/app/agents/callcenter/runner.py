@@ -64,8 +64,9 @@ class CallCenterAdkEngine:
 
     def __init__(self, settings: Settings, agent: Any | None = None) -> None:
         self.settings = settings
-        if settings.google_api_key:
-            os.environ.setdefault("GOOGLE_API_KEY", settings.google_api_key)
+        if not settings.google_api_key:
+            raise RuntimeError("GOOGLE_API_KEY is required to run backend_adk Google ADK/Gemini turns.")
+        os.environ["GOOGLE_API_KEY"] = settings.google_api_key
         self.agent = agent or build_callcenter_agent_graph(model=settings.google_adk_model)
         self.session_db_path = Path(settings.adk_session_db_path)
         self.session_db_path.parent.mkdir(parents=True, exist_ok=True)

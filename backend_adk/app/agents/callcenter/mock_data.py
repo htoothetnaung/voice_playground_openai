@@ -3,6 +3,7 @@ ATENXION_CUSTOMER_PROFILE = {
     "account_id": "ATX-204871",
     "full_name": "Htoo Thet",
     "phone_number": "09661200650",
+    "alternate_phone_numbers": ["0966120050"],
     "date_of_birth": "2004-05-29",
     "pin_last4": "1234",
     "sentiment": "frustrated_but_cooperative",

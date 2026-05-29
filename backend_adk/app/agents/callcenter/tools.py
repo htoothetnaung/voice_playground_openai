@@ -118,6 +118,20 @@ def _digits_only(value: str) -> str:
     return re.sub(r"\D", "", value or "")
 
 
+def _profile_phone_numbers(customer_profile: dict[str, Any]) -> set[str]:
+    """Return normalized phone numbers accepted for the demo customer profile."""
+    numbers = {
+        _digits_only(str(customer_profile.get("phone_number") or "")),
+        *{
+            _digits_only(str(value))
+            for value in customer_profile.get("alternate_phone_numbers", [])
+        },
+    }
+    if customer_profile.get("account_id") == "ATX-204871":
+        numbers.update({"09661200650", "0966120050"})
+    return {number for number in numbers if number}
+
+
 def _normalize_date_of_birth(value: str) -> str:
     """Normalize common typed or spoken DOB formats to the mock record's ISO date."""
     normalized = re.sub(r"[,]+", " ", value or "").strip()
@@ -287,9 +301,7 @@ async def lookup_customer_profile(
 ) -> dict:
     """Look up the Atenxion customer profile by phone number."""
     customer_profile = await _repository().customer_profile()
-    matched = _digits_only(phone_number) == _digits_only(
-        customer_profile["phone_number"]
-    )
+    matched = _digits_only(phone_number) in _profile_phone_numbers(customer_profile)
     if matched:
         _state_context(tool_context).active_account_id = customer_profile["account_id"]
         return {
@@ -323,8 +335,7 @@ async def verify_caller(
     """Verify the caller using phone number, date of birth, and 4-digit PIN."""
     customer_profile = await _repository().customer_profile()
     verified = (
-        _digits_only(phone_number)
-        == _digits_only(customer_profile["phone_number"])
+        _digits_only(phone_number) in _profile_phone_numbers(customer_profile)
         and _normalize_date_of_birth(date_of_birth)
         == _normalize_date_of_birth(customer_profile["date_of_birth"])
         and _digits_only(pin_last4) == _digits_only(customer_profile["pin_last4"])

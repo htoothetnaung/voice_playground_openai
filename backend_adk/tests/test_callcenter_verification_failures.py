@@ -68,6 +68,29 @@ async def test_lookup_customer_profile_accepts_formatted_phone_number() -> None:
 
 
 @pytest.mark.asyncio
+async def test_lookup_customer_profile_accepts_short_demo_phone_number() -> None:
+    """Verify the demo account can be found with the shorter number used in voice tests."""
+    result = await lookup_customer_profile(FakeToolContext(), "0966120050")
+
+    assert result["found"] is True
+    assert result["profile"]["account_id"] == "ATX-204871"
+
+
+@pytest.mark.asyncio
+async def test_verification_accepts_short_demo_phone_number() -> None:
+    """Verify full caller verification accepts the shorter demo phone number."""
+    result = await verify_caller(
+        FakeToolContext(),
+        phone_number="0966120050",
+        date_of_birth="2004-05-29",
+        pin_last4="1234",
+    )
+
+    assert result["verified"] is True
+    assert result["account_id"] == "ATX-204871"
+
+
+@pytest.mark.asyncio
 async def test_account_specific_tools_require_verification() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     result = await get_latest_bill(FakeToolContext(), "ATX-204871")

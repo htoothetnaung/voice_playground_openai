@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:backend": "uv run --project backend uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload",
-    "dev:backend:adk": "uv run --project backend_adk uvicorn app.main:app --app-dir backend_adk --host 127.0.0.1 --port 8001 --reload",
+    "dev:backend:adk": "uv run --project backend_adk uvicorn app.main:app --app-dir backend_adk --host 127.0.0.1 --port 8001 --reload --reload-dir backend_adk/app",
     "dev:backend:venv": ".\\backend\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload",
     "build": "next build",
     "start": "next start",
