@@ -24,8 +24,8 @@ class ElevenLabsTTSAdapter:
         model: str,
         sample_rate: int,
         timeout_seconds: float = 30.0,
-        max_retries: int = 2,
-        retry_delay_seconds: float = 0.25,
+        max_retries: int = 4,
+        retry_delay_seconds: float = 0.35,
     ) -> None:
         """Initialize this object with the dependencies it needs for the surrounding backend workflow."""
         self.api_key = api_key
@@ -65,8 +65,13 @@ class ElevenLabsTTSAdapter:
                     yield chunk
                 return
             except _retryable_tts_errors() as exc:
-                if yielded_any or attempt >= self.max_retries:
+                if yielded_any:
                     raise
+                if attempt >= self.max_retries:
+                    raise RuntimeError(
+                        f"ElevenLabs TTS network connection failed after {attempt + 1} attempts: "
+                        f"{type(exc).__name__}: {exc}"
+                    ) from exc
                 logger.warning(
                     "ElevenLabs TTS transient connection failure; retrying",
                     extra={

@@ -14,6 +14,12 @@ def test_callcenter_scenario_metadata() -> None:
     payload = response.json()
     assert payload["scenario_key"] == "callcenteragent"
     assert payload["company_name"] == "Atenxion"
+    assert {item["id"] for item in payload["available_architectures"]} == {
+        "cascaded_pipeline",
+        "elevenlabs_pipeline",
+    }
     assert "callcenteragent" in payload["agents"]
     assert "billingAgent" in payload["agents"]
+    assert "Atenxion-bank-tool" in payload["tools"]["billing"]
+    assert "searchGmailCustomerHistory" in payload["tools"]["mcp_workflow"]
     assert "searchAtenxionKnowledgeBase" in payload["tools"]["supervisor"]

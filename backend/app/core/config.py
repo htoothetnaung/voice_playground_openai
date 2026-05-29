@@ -59,6 +59,7 @@ class Settings(BaseSettings):
         default=350,
         alias="ELEVENLABS_STT_MIN_SILENCE_DURATION_MS",
     )
+    elevenlabs_stt_sample_rate: int = Field(default=16000, alias="ELEVENLABS_STT_SAMPLE_RATE")
     elevenlabs_tts_model: str = Field(default="eleven_flash_v2_5", alias="ELEVENLABS_TTS_MODEL")
     elevenlabs_tts_alt_model: str = Field(default="eleven_turbo_v2_5", alias="ELEVENLABS_TTS_ALT_MODEL")
     elevenlabs_voice_id: str = Field(default="JBFqnCBsd6RMkjVDRZzb", alias="ELEVENLABS_VOICE_ID")
@@ -86,7 +87,7 @@ class Settings(BaseSettings):
         default="TxGEqnHWrfWFTfGW9XjX",
         alias="ELEVENLABS_VOICE_HUMAN_ESCALATION",
     )
-    cascaded_input_sample_rate: int = Field(default=16000, alias="CASCADED_INPUT_SAMPLE_RATE")
+    cascaded_input_sample_rate: int = Field(default=24000, alias="CASCADED_INPUT_SAMPLE_RATE")
     cascaded_output_sample_rate: int = Field(default=24000, alias="CASCADED_OUTPUT_SAMPLE_RATE")
     cascaded_provider_timeout_seconds: float = Field(
         default=30.0,

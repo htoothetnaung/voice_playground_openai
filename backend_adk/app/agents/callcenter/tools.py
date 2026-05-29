@@ -7,7 +7,16 @@ from typing import Any
 from google.adk.tools import ToolContext
 from openai import AsyncOpenAI
 
+from app.agents.callcenter.bank_tool import fetch_atenxion_bank_transactions
 from app.agents.callcenter.data_repository import CallCenterDataRepository
+from app.agents.callcenter.mcp_integrations import (
+    MCP_DOC_SUMMARY,
+    gmail_connector_tool,
+    remote_email_tool,
+    remote_ticketing_tool,
+    run_mcp_response,
+    validate_email,
+)
 from app.core.config import Settings, get_settings
 
 _DATE_FORMATS = (
@@ -405,6 +414,20 @@ async def get_latest_bill(
     }
 
 
+async def atenxion_bank_tool(
+    tool_context: ToolContext,
+    user_id: str,
+) -> dict:
+    """
+    Retrieve completed Atenxion Bank transaction details by user ID.
+
+    Before calling this tool, the caller must be verified and must provide the bank user ID.
+    """
+    if not _is_verified(tool_context):
+        return _verification_required()
+    return await fetch_atenxion_bank_transactions(_settings(), user_id=user_id)
+
+
 async def explain_charge_breakdown(
     tool_context: ToolContext,
     account_id: str,
@@ -675,4 +698,144 @@ async def escalation_decision(
         ),
         "case_summary": case_summary,
         "requested_outcome": requested_outcome,
+    }
+
+
+async def search_gmail_customer_history(
+    tool_context: ToolContext,
+    customer_email: str,
+    query: str,
+) -> dict:
+    """Search recent customer email history through the optional Gmail MCP connector."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    settings = _settings()
+    tool = gmail_connector_tool(settings)
+    if tool is None:
+        return {
+            "available": False,
+            "reason": "MCP_GMAIL_OAUTH_TOKEN is not configured.",
+            "doc_note": MCP_DOC_SUMMARY,
+        }
+    if not validate_email(customer_email):
+        return {"available": False, "reason": "customer_email must be a valid email address."}
+    result = await run_mcp_response(
+        _openai_client(settings),
+        settings,
+        tool_name="gmail_customer_history",
+        tool=tool,
+        input_text=(
+            "Use the Gmail connector to find customer-support related messages for "
+            f"{customer_email}. Query: {query}. Return only a compact summary of relevant threads."
+        ),
+    )
+    return {**result, "customer_email": customer_email}
+
+
+async def send_customer_followup_email_via_mcp(
+    tool_context: ToolContext,
+    recipient_email: str,
+    subject: str,
+    body: str,
+    case_id: str | None = None,
+) -> dict:
+    """Send or draft a customer follow-up email through an optional trusted MCP server."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    settings = _settings()
+    tool = remote_email_tool(settings)
+    if tool is None:
+        return {
+            "available": False,
+            "reason": "MCP_EMAIL_SERVER_URL is not configured.",
+            "doc_note": MCP_DOC_SUMMARY,
+            "recommended_path": (
+                "The official Gmail connector is useful for read/search. For sending email, configure a "
+                "trusted remote MCP server that exposes send_email or create_draft and set MCP_EMAIL_ALLOWED_TOOLS."
+            ),
+        }
+    if not validate_email(recipient_email):
+        return {"available": False, "reason": "recipient_email must be a valid email address."}
+    context = _state_context(tool_context)
+    result = await run_mcp_response(
+        _openai_client(settings),
+        settings,
+        tool_name="customer_followup_email",
+        tool=tool,
+        input_text=(
+            "Use the configured customer email MCP server to send or draft this verified support follow-up. "
+            f"Recipient: {recipient_email}\nSubject: {subject}\nCase ID: {case_id or context.case_id or 'not provided'}\n"
+            f"Body:\n{body}"
+        ),
+    )
+    return {
+        **result,
+        "recipient_email": recipient_email,
+        "case_id": case_id or context.case_id,
+        "sent": bool(result["mcp_call_count"] and not result["approval_required"] and not result["errors"]),
+    }
+
+
+async def search_customer_tickets_via_mcp(
+    tool_context: ToolContext,
+    customer_identifier: str,
+    query: str,
+) -> dict:
+    """Search customer-service tickets through an optional trusted MCP server."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    settings = _settings()
+    tool = remote_ticketing_tool(settings)
+    if tool is None:
+        return {
+            "available": False,
+            "reason": "MCP_TICKETING_SERVER_URL is not configured.",
+            "recommended_path": "Configure an official or trusted Zendesk/Zoho Desk remote MCP server when selected.",
+        }
+    result = await run_mcp_response(
+        _openai_client(settings),
+        settings,
+        tool_name="customer_ticket_search",
+        tool=tool,
+        input_text=(
+            "Use the configured customer ticketing MCP server to search existing complaints and tickets. "
+            f"Customer identifier: {customer_identifier}. Query: {query}. Return compact ticket IDs, statuses, and next actions."
+        ),
+    )
+    return {**result, "customer_identifier": customer_identifier}
+
+
+async def create_customer_ticket_via_mcp(
+    tool_context: ToolContext,
+    customer_identifier: str,
+    title: str,
+    complaint_summary: str,
+    priority: str,
+) -> dict:
+    """Create a customer complaint ticket through an optional trusted MCP server."""
+    if not _is_verified(tool_context):
+        return _verification_required()
+    settings = _settings()
+    tool = remote_ticketing_tool(settings)
+    if tool is None:
+        return {
+            "available": False,
+            "reason": "MCP_TICKETING_SERVER_URL is not configured.",
+            "recommended_path": "Configure an official or trusted Zendesk/Zoho Desk remote MCP server when selected.",
+        }
+    result = await run_mcp_response(
+        _openai_client(settings),
+        settings,
+        tool_name="customer_ticket_create",
+        tool=tool,
+        input_text=(
+            "Use the configured customer ticketing MCP server to create a customer complaint ticket. "
+            f"Customer identifier: {customer_identifier}\nTitle: {title}\nPriority: {priority}\n"
+            f"Complaint summary: {complaint_summary}"
+        ),
+    )
+    return {
+        **result,
+        "customer_identifier": customer_identifier,
+        "ticket_created": bool(result["mcp_call_count"] and not result["approval_required"] and not result["errors"]),
     }

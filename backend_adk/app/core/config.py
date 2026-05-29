@@ -35,7 +35,7 @@ class Settings(BaseSettings):
         alias="ALLOWED_ORIGINS",
     )
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
-    voice_provider: str = Field(default="openai_native", alias="VOICE_PROVIDER")
+    voice_provider: str = Field(default="cascaded_pipeline", alias="VOICE_PROVIDER")
     realtime_model: str = Field(default="not_supported_in_backend_adk", alias="OPENAI_REALTIME_MODEL")
     responses_model: str = Field(default="not_supported_in_backend_adk", alias="OPENAI_RESPONSES_MODEL")
     cascaded_llm_model: str = Field(default="gemini-2.5-flash", alias="GOOGLE_ADK_MODEL")
@@ -45,6 +45,23 @@ class Settings(BaseSettings):
     deepgram_endpointing_ms: int = Field(default=300, alias="DEEPGRAM_ENDPOINTING_MS")
     deepgram_utterance_end_ms: int = Field(default=1000, alias="DEEPGRAM_UTTERANCE_END_MS")
     elevenlabs_api_key: str | None = Field(default=None, alias="ELEVENLABS_API_KEY")
+    elevenlabs_stt_model: str = Field(default="scribe_v2_realtime", alias="ELEVENLABS_STT_MODEL")
+    elevenlabs_stt_commit_strategy: str = Field(default="vad", alias="ELEVENLABS_STT_COMMIT_STRATEGY")
+    elevenlabs_stt_commit_silence_ms: int = Field(default=250, alias="ELEVENLABS_STT_COMMIT_SILENCE_MS")
+    elevenlabs_stt_vad_silence_threshold_secs: float = Field(
+        default=0.9,
+        alias="ELEVENLABS_STT_VAD_SILENCE_THRESHOLD_SECS",
+    )
+    elevenlabs_stt_vad_threshold: float = Field(default=0.35, alias="ELEVENLABS_STT_VAD_THRESHOLD")
+    elevenlabs_stt_min_speech_duration_ms: int = Field(
+        default=120,
+        alias="ELEVENLABS_STT_MIN_SPEECH_DURATION_MS",
+    )
+    elevenlabs_stt_min_silence_duration_ms: int = Field(
+        default=350,
+        alias="ELEVENLABS_STT_MIN_SILENCE_DURATION_MS",
+    )
+    elevenlabs_stt_sample_rate: int = Field(default=16000, alias="ELEVENLABS_STT_SAMPLE_RATE")
     elevenlabs_tts_model: str = Field(default="eleven_flash_v2_5", alias="ELEVENLABS_TTS_MODEL")
     elevenlabs_tts_alt_model: str = Field(default="eleven_turbo_v2_5", alias="ELEVENLABS_TTS_ALT_MODEL")
     elevenlabs_voice_id: str = Field(default="JBFqnCBsd6RMkjVDRZzb", alias="ELEVENLABS_VOICE_ID")
@@ -106,6 +123,35 @@ class Settings(BaseSettings):
     callcenter_rag_vector_store_id: str | None = Field(
         default=None,
         alias="CALLCENTER_RAG_VECTOR_STORE_ID",
+    )
+    mcp_gmail_oauth_token: str | None = Field(default=None, alias="MCP_GMAIL_OAUTH_TOKEN")
+    mcp_gmail_require_approval: str = Field(default="always", alias="MCP_GMAIL_REQUIRE_APPROVAL")
+    mcp_email_server_url: str | None = Field(default=None, alias="MCP_EMAIL_SERVER_URL")
+    mcp_email_authorization: str | None = Field(default=None, alias="MCP_EMAIL_AUTHORIZATION")
+    mcp_email_allowed_tools_raw: str = Field(
+        default="send_email,send_message,create_draft",
+        alias="MCP_EMAIL_ALLOWED_TOOLS",
+    )
+    mcp_email_require_approval: str = Field(default="always", alias="MCP_EMAIL_REQUIRE_APPROVAL")
+    mcp_ticketing_server_url: str | None = Field(default=None, alias="MCP_TICKETING_SERVER_URL")
+    mcp_ticketing_authorization: str | None = Field(default=None, alias="MCP_TICKETING_AUTHORIZATION")
+    mcp_ticketing_allowed_tools_raw: str = Field(
+        default="search_tickets,create_ticket,update_ticket,add_comment",
+        alias="MCP_TICKETING_ALLOWED_TOOLS",
+    )
+    mcp_ticketing_require_approval: str = Field(default="always", alias="MCP_TICKETING_REQUIRE_APPROVAL")
+    atenxion_bank_api_base_url: str = Field(
+        default="https://api-qabank.atenxion.ai",
+        alias="ATENXION_BANK_API_BASE_URL",
+    )
+    atenxion_bank_api_token: str | None = Field(default=None, alias="ATENXION_BANK_API_TOKEN")
+    atenxion_bank_test_user_id: str = Field(
+        default="6a0d6b143cac1525e1e4ce87",
+        alias="ATENXION_BANK_TEST_USER_ID",
+    )
+    atenxion_bank_timeout_seconds: float = Field(
+        default=10.0,
+        alias="ATENXION_BANK_TIMEOUT_SECONDS",
     )
     mongodb_uri: str = Field(default="mongodb://127.0.0.1:27017", alias="MONGODB_URI")
     mongodb_db: str = Field(default="atenxion_callcenter", alias="MONGODB_DB")

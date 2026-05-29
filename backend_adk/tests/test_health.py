@@ -15,5 +15,5 @@ def test_health_route_returns_backend_status() -> None:
     assert payload["ok"] is True
     assert payload["service"] == "atenxion-callcenter-adk-backend"
     assert "voice_provider" in payload
-    assert payload["available_architectures"] == ["cascaded_pipeline"]
+    assert payload["available_architectures"] == ["cascaded_pipeline", "elevenlabs_pipeline"]
     assert payload["llm_provider"] == "google_adk"

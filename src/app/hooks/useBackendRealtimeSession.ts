@@ -11,7 +11,8 @@ import {
 } from "../lib/speechActivityGate";
 import { SessionStatus } from "../types";
 
-const INPUT_PCM_SAMPLE_RATE = 16000;
+const DEEPGRAM_INPUT_PCM_SAMPLE_RATE = 24000;
+const ELEVENLABS_INPUT_PCM_SAMPLE_RATE = 16000;
 const OUTPUT_PCM_SAMPLE_RATE = 24000;
 const AUDIO_START_LOOKAHEAD_SECONDS = 0.06;
 const TRANSFER_AUDIO_SETTLE_MS = 120;
@@ -185,6 +186,7 @@ export function useBackendRealtimeSession(
   const manualPttModeRef = useRef(false);
   const providerVadModeRef = useRef(false);
   const pttSpeakingRef = useRef(false);
+  const assistantSpeechActiveRef = useRef(false);
   const activeOutputSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const audioQueueRef = useRef<QueuedAudio[]>([]);
   const isProcessingAudioQueueRef = useRef(false);
@@ -196,6 +198,7 @@ export function useBackendRealtimeSession(
   const activeTransferAgentNameRef = useRef<string | undefined>(undefined);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
+  const inputSampleRateRef = useRef(DEEPGRAM_INPUT_PCM_SAMPLE_RATE);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
   const processorNodeRef = useRef<ScriptProcessorNode | null>(null);
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -238,6 +241,7 @@ export function useBackendRealtimeSession(
 
   const stopPlayback = useCallback(() => {
     playbackGenerationRef.current += 1;
+    assistantSpeechActiveRef.current = false;
     audioQueueRef.current = [];
     transferGateActiveRef.current = false;
     pendingTransferCueRef.current = null;
@@ -514,12 +518,14 @@ export function useBackendRealtimeSession(
           // transfer timer instead so ringing breadcrumbs match what users hear.
           break;
         case "agent_speech_start":
+          assistantSpeechActiveRef.current = true;
           addTranscriptBreadcrumb(`Agent speech started: ${event.agent_name}`, {
             agentName: event.agent_name,
             _breadcrumbType: "audio",
           });
           break;
         case "agent_speech_end":
+          assistantSpeechActiveRef.current = false;
           addTranscriptBreadcrumb(`Agent speech ended: ${event.agent_name}`, {
             agentName: event.agent_name,
             _breadcrumbType: "audio",
@@ -531,6 +537,7 @@ export function useBackendRealtimeSession(
             error: event.error,
             _breadcrumbType: "audio",
           });
+          assistantSpeechActiveRef.current = false;
           callbacksRef.current.onAssistantSpeechEnd?.();
           break;
         case "tool_start":
@@ -560,9 +567,11 @@ export function useBackendRealtimeSession(
           break;
         }
         case "audio_end":
+          assistantSpeechActiveRef.current = false;
           callbacksRef.current.onAssistantSpeechEnd?.();
           break;
         case "audio_interrupted":
+          assistantSpeechActiveRef.current = false;
           stopPlayback();
           break;
         case "guardrail_tripped":
@@ -623,6 +632,25 @@ export function useBackendRealtimeSession(
     }));
   }, []);
 
+  const sendBargeInInterrupt = useCallback(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const assistantOutputInFlight =
+      assistantSpeechActiveRef.current ||
+      activeOutputSourcesRef.current.length > 0 ||
+      audioQueueRef.current.length > 0 ||
+      transferGateActiveRef.current ||
+      pendingTransferCueRef.current !== null ||
+      isProcessingAudioQueueRef.current;
+    if (!assistantOutputInFlight) return;
+
+    stopPlayback();
+    ws.send(JSON.stringify({ type: "interrupt", reason: "barge_in" }));
+    addTranscriptBreadcrumb("User barge-in interrupt", {
+      _breadcrumbType: "audio",
+    });
+  }, [addTranscriptBreadcrumb, stopPlayback]);
+
   const ensureMicrophonePipeline = useCallback(async () => {
     if (microphoneStreamRef.current && processorNodeRef.current && inputAudioContextRef.current) {
       return;
@@ -637,7 +665,7 @@ export function useBackendRealtimeSession(
       },
     });
 
-    const audioContext = new AudioContext({ sampleRate: INPUT_PCM_SAMPLE_RATE });
+    const audioContext = new AudioContext({ sampleRate: inputSampleRateRef.current });
     const sourceNode = audioContext.createMediaStreamSource(stream);
     const processorNode = audioContext.createScriptProcessor(4096, 1, 1);
 
@@ -657,7 +685,7 @@ export function useBackendRealtimeSession(
       const resampledInput = resampleLinear(
         input,
         event.inputBuffer.sampleRate,
-        INPUT_PCM_SAMPLE_RATE,
+        inputSampleRateRef.current,
       );
       const pcmBuffer = float32ToInt16Bytes(resampledInput);
       if (pcmBuffer.byteLength === 0) return;
@@ -678,6 +706,7 @@ export function useBackendRealtimeSession(
       if (useProviderVad) {
         if (gateResult.opened) {
           speechGateSuppressedFramesRef.current = 0;
+          sendBargeInInterrupt();
           ws.send(
             JSON.stringify({
               type: "client_event",
@@ -747,6 +776,7 @@ export function useBackendRealtimeSession(
 
       if (gateResult.opened) {
         speechGateSuppressedFramesRef.current = 0;
+        sendBargeInInterrupt();
         ws.send(
           JSON.stringify({
             type: "client_event",
@@ -812,7 +842,7 @@ export function useBackendRealtimeSession(
     sourceNodeRef.current = sourceNode;
     processorNodeRef.current = processorNode;
     inputSilenceGainRef.current = inputSilenceGain;
-  }, [addTranscriptBreadcrumb, updateMicMeter]);
+  }, [addTranscriptBreadcrumb, sendBargeInInterrupt, updateMicMeter]);
 
   const resumeInputAudioContext = useCallback(() => {
     const audioContext = inputAudioContextRef.current;
@@ -845,6 +875,16 @@ export function useBackendRealtimeSession(
       hasBufferedAudioRef.current = false;
       micFramesSentRef.current = 0;
       providerVadModeRef.current = architecture === "elevenlabs_pipeline";
+      const desiredInputSampleRate = providerVadModeRef.current
+        ? ELEVENLABS_INPUT_PCM_SAMPLE_RATE
+        : DEEPGRAM_INPUT_PCM_SAMPLE_RATE;
+      if (
+        inputAudioContextRef.current &&
+        inputAudioContextRef.current.sampleRate !== desiredInputSampleRate
+      ) {
+        await cleanupMicrophonePipeline();
+      }
+      inputSampleRateRef.current = desiredInputSampleRate;
       speechGateRef.current.reset();
       await ensureMicrophonePipeline();
       resumeInputAudioContext();
@@ -896,6 +936,7 @@ export function useBackendRealtimeSession(
     },
     [
       addTranscriptBreadcrumb,
+      cleanupMicrophonePipeline,
       ensureMicrophonePipeline,
       handleServerEvent,
       resumeInputAudioContext,
@@ -910,6 +951,8 @@ export function useBackendRealtimeSession(
     pttSpeakingRef.current = false;
     manualPttModeRef.current = false;
     providerVadModeRef.current = false;
+    assistantSpeechActiveRef.current = false;
+    inputSampleRateRef.current = DEEPGRAM_INPUT_PCM_SAMPLE_RATE;
     speechGateRef.current.reset();
     speechGateSuppressedFramesRef.current = 0;
     hasBufferedAudioRef.current = false;

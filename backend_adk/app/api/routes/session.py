@@ -9,9 +9,9 @@ router = APIRouter()
 @router.get("/api/session")
 async def create_session(settings: Settings = Depends(get_settings)) -> dict:
     """Return a clear compatibility response because OpenAI native realtime is out of scope here."""
-    if settings.voice_provider == "cascaded_pipeline":
+    if settings.voice_provider in {"cascaded_pipeline", "elevenlabs_pipeline"}:
         return {
-            "architecture": "cascaded_pipeline",
+            "architecture": settings.voice_provider,
             "message": "The ADK backend uses /api/v1/callcenter/realtime/ws for cascaded voice sessions.",
         }
     raise HTTPException(

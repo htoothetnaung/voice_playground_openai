@@ -231,7 +231,7 @@ class CallCenterCascadedRuntime:
             return ElevenLabsRealtimeTranscriber(
                 api_key=self.settings.elevenlabs_api_key,
                 model=self.settings.elevenlabs_stt_model,
-                sample_rate=self.settings.cascaded_input_sample_rate,
+                sample_rate=self.settings.elevenlabs_stt_sample_rate,
                 commit_strategy=self.settings.elevenlabs_stt_commit_strategy,
                 vad_silence_threshold_secs=self.settings.elevenlabs_stt_vad_silence_threshold_secs,
                 vad_threshold=self.settings.elevenlabs_stt_vad_threshold,
@@ -265,6 +265,11 @@ class CallCenterCascadedRuntime:
         if self.architecture == "elevenlabs_pipeline":
             return self.settings.elevenlabs_stt_commit_silence_ms
         return self.settings.deepgram_endpointing_ms
+
+    def _stt_input_sample_rate(self) -> int:
+        if self.architecture == "elevenlabs_pipeline":
+            return self.settings.elevenlabs_stt_sample_rate
+        return self.settings.cascaded_input_sample_rate
 
     def _build_tts_adapter(self) -> ElevenLabsTTSAdapter | None:
         """Create the ElevenLabs adapter when TTS credentials are configured."""
@@ -718,11 +723,15 @@ class CallCenterCascadedRuntime:
             await websocket.send_json({"type": "cost_estimate", **metrics.cost_estimate()})
         except asyncio.CancelledError:
             tts_worker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await tts_worker
             await websocket.send_json({"type": "audio_interrupted"})
             raise
         except Exception as exc:
             logger.exception("Cascaded voice turn failed")
             tts_worker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await tts_worker
             await websocket.send_json(
                 {
                     "type": "error",
@@ -864,7 +873,7 @@ class CallCenterCascadedRuntime:
             tts_provider="elevenlabs",
             tts_model=self.settings.elevenlabs_tts_model,
             tts_voice_id=self.settings.elevenlabs_voice_id,
-            input_sample_rate=self.settings.cascaded_input_sample_rate,
+            input_sample_rate=self._stt_input_sample_rate(),
             output_sample_rate=self.settings.cascaded_output_sample_rate,
         )
 
@@ -1058,7 +1067,9 @@ def _direct_handoff_agent_name(
 
 def _is_transfer_only_request(text: str, target_agent_name: str) -> bool:
     """Detect caller turns that only ask to move agents, without a substantive support question."""
-    normalized = " ".join(text.lower().strip().strip(".?!").split())
+    normalized = " ".join(
+        text.lower().translate(str.maketrans({".": " ", ",": " ", "?": " ", "!": " "})).split()
+    )
     if not normalized:
         return False
 
@@ -1087,6 +1098,20 @@ def _is_transfer_only_request(text: str, target_agent_name: str) -> bool:
         "you",
         "please",
         "pls",
+        "yes",
+        "no",
+        "yeah",
+        "yep",
+        "ok",
+        "okay",
+        "oh",
+        "uh",
+        "um",
+        "erm",
+        "just",
+        "stop",
+        "wait",
+        "hold",
         "me",
         "i",
         "want",

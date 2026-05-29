@@ -9,18 +9,19 @@ It keeps the same FastAPI route shape and frontend WebSocket protocol as `backen
 - `FastAPI` for HTTP APIs and WebSocket serving
 - `google-adk` for agent orchestration, tools, sessions, and transfers
 - `DatabaseSessionService` with SQLite via `aiosqlite`
-- Deepgram STT and ElevenLabs TTS for the cascaded voice path
+- Deepgram STT or ElevenLabs Scribe STT plus ElevenLabs TTS for cascaded voice paths
 - MongoDB when available for mock-data seeding and admin audit records
 
 ## Scope
 
-The ADK backend intentionally supports the cascaded architecture only:
+The ADK backend intentionally drops OpenAI native realtime and supports the two non-native voice architectures:
 
 ```text
 Browser audio/text -> FastAPI WebSocket -> Deepgram -> Google ADK/Gemini -> ElevenLabs -> Browser audio/events
+Browser audio/text -> FastAPI WebSocket -> ElevenLabs Scribe -> Google ADK/Gemini -> ElevenLabs -> Browser audio/events
 ```
 
-OpenAI native realtime is not implemented in `backend_adk`.
+OpenAI native realtime is not implemented in `backend_adk`. Optional OpenAI helpers such as the Responses proxy, vector-store RAG, and MCP connector experiments remain available only when their environment variables are configured.
 
 ## Endpoints
 
@@ -46,6 +47,8 @@ GOOGLE_ADK_MODEL=gemini-2.5-flash
 ADK_SESSION_DB_PATH=backend_adk/.data/callcenter_sessions.db
 BACKEND_ADK_PORT=8001
 VOICE_PROVIDER=cascaded_pipeline
+ELEVENLABS_STT_MODEL=scribe_v2_realtime
+ELEVENLABS_STT_SAMPLE_RATE=16000
 
 FRONTEND_BACKEND_BASE_URL=http://127.0.0.1:8001
 NEXT_PUBLIC_FRONTEND_BACKEND_BASE_URL=http://127.0.0.1:8001

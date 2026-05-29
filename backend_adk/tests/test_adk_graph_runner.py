@@ -23,6 +23,18 @@ def test_adk_graph_builds_expected_agent_names() -> None:
     assert agents["callcenteragent"].sub_agents
 
 
+def test_adk_graph_exposes_optional_helper_tools() -> None:
+    agents = build_callcenter_agent_map(model="gemini-test")
+
+    billing_tool_names = {tool.__name__ for tool in agents["billingAgent"].tools}
+    supervisor_tool_names = {tool.__name__ for tool in agents["supervisorAgent"].tools}
+    escalation_tool_names = {tool.__name__ for tool in agents["humanEscalationAgent"].tools}
+
+    assert "atenxion_bank_tool" in billing_tool_names
+    assert "atenxion_bank_tool" in supervisor_tool_names
+    assert "search_gmail_customer_history" in escalation_tool_names
+
+
 @pytest.mark.asyncio
 async def test_adk_runner_returns_existing_route_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeEngine:

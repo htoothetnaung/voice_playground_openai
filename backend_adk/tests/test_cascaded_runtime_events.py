@@ -236,6 +236,21 @@ def test_transfer_delay_is_fixed_phone_line_window() -> None:
     assert cascaded_runtime.HANDOFF_TRANSFER_DELAY_SECONDS == 2.5
 
 
+def test_elevenlabs_pipeline_metrics_select_elevenlabs_stt() -> None:
+    """Verify the ADK runtime selects ElevenLabs Scribe metadata for the second cascaded architecture."""
+    runtime = CallCenterAdkCascadedRuntime(
+        Settings(GOOGLE_API_KEY="test-google-key"),
+        architecture="elevenlabs_pipeline",
+    )
+
+    metrics = runtime._new_metrics()
+
+    assert metrics.architecture == "elevenlabs_pipeline"
+    assert metrics.stt_provider == "elevenlabs"
+    assert metrics.stt_model == "scribe_v2_realtime"
+    assert metrics.input_sample_rate == 16000
+
+
 def test_cascaded_runner_turn_limit_is_raised_above_sdk_default() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     assert cascaded_runtime.MAX_AGENT_TURNS == 30

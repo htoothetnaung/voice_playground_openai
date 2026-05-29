@@ -54,6 +54,16 @@ async def scenario_metadata() -> dict[str, Any]:
                 "tts_provider": "elevenlabs",
                 "tts_models": [settings.elevenlabs_tts_model, settings.elevenlabs_tts_alt_model],
             },
+            {
+                "id": "elevenlabs_pipeline",
+                "label": "ElevenLabs Scribe -> Google ADK/Gemini -> ElevenLabs",
+                "stt_provider": "elevenlabs",
+                "stt_models": [settings.elevenlabs_stt_model],
+                "llm_provider": "google_adk",
+                "llm_model": settings.google_adk_model,
+                "tts_provider": "elevenlabs",
+                "tts_models": [settings.elevenlabs_tts_model, settings.elevenlabs_tts_alt_model],
+            },
         ],
         "agents": [
             "callcenteragent",
@@ -73,6 +83,7 @@ async def scenario_metadata() -> dict[str, Any]:
             ],
             "billing": [
                 "getLatestBill",
+                "Atenxion-bank-tool",
                 "explainChargeBreakdown",
                 "offerPaymentArrangement",
                 "applyGoodwillCredit",
@@ -92,8 +103,18 @@ async def scenario_metadata() -> dict[str, Any]:
             "supervisor": [
                 "lookupPolicyDocument",
                 "searchAtenxionKnowledgeBase",
+                "Atenxion-bank-tool",
                 "approveException",
                 "escalationDecision",
+            ],
+            "mcp_workflow": [
+                "searchGmailCustomerHistory",
+                "sendCustomerFollowupEmailViaMcp",
+                "searchCustomerTicketsViaMcp",
+                "createCustomerTicketViaMcp",
+            ],
+            "external_api": [
+                "Atenxion-bank-tool",
             ],
         },
     }
@@ -168,17 +189,17 @@ async def callcenter_realtime_ws(websocket: WebSocket) -> None:
     """Accept the call-center WebSocket and serve the ADK cascaded voice runtime."""
     settings = get_settings()
     architecture = websocket.query_params.get("architecture") or settings.voice_provider
-    if architecture != "cascaded_pipeline":
+    if architecture not in {"cascaded_pipeline", "elevenlabs_pipeline"}:
         await websocket.accept()
         await websocket.send_json(
             {
                 "type": "error",
-                "error": "backend_adk only supports the cascaded_pipeline architecture.",
+                "error": "backend_adk only supports cascaded_pipeline and elevenlabs_pipeline architectures.",
             }
         )
         await websocket.close()
         return
-    runtime = CallCenterAdkCascadedRuntime(settings)
+    runtime = CallCenterAdkCascadedRuntime(settings, architecture=architecture)
     await runtime.serve(
         websocket,
         agent_name=websocket.query_params.get("agent_name"),

@@ -5,7 +5,9 @@ import pytest
 from app.agents.callcenter.tools import (
     _build_vector_store_search_payload,
     _search_atenxion_knowledge_base_impl,
+    search_gmail_customer_history,
 )
+from app.agents.callcenter import tools as tools_module
 from app.core.config import Settings
 
 
@@ -118,3 +120,18 @@ async def test_rag_tool_impl_normalizes_vector_store_results() -> None:
     assert result["latency_ms"] >= 0
     assert client.requests[0]["vector_store_id"] == "vs_test"
     assert client.requests[0]["body"]["max_num_results"] == 3
+
+
+@pytest.mark.asyncio
+async def test_optional_mcp_helper_reports_missing_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(tools_module, "_settings", lambda: _settings(MCP_GMAIL_OAUTH_TOKEN=""))
+    tool_context = type("ToolContext", (), {"state": {"verified": True}})()
+
+    result = await search_gmail_customer_history(
+        tool_context,
+        customer_email="customer@example.com",
+        query="billing follow up",
+    )
+
+    assert result["available"] is False
+    assert result["reason"] == "MCP_GMAIL_OAUTH_TOKEN is not configured."

@@ -388,6 +388,25 @@ def test_cascaded_runner_turn_limit_is_raised_above_sdk_default() -> None:
     assert cascaded_runtime.MAX_AGENT_TURNS == 30
 
 
+def test_cascaded_runtime_keeps_deepgram_and_elevenlabs_input_rates_separate() -> None:
+    """Deepgram keeps the legacy cascaded rate while ElevenLabs Scribe uses its SDK-friendly rate."""
+    settings = Settings(
+        OPENAI_API_KEY="sk-test",
+        DEEPGRAM_API_KEY="dg-test",
+        ELEVENLABS_API_KEY="el-test",
+        CASCADED_INPUT_SAMPLE_RATE=24000,
+        ELEVENLABS_STT_SAMPLE_RATE=16000,
+    )
+
+    deepgram_runtime = CallCenterCascadedRuntime(settings, architecture="cascaded_pipeline")
+    elevenlabs_runtime = CallCenterCascadedRuntime(settings, architecture="elevenlabs_pipeline")
+
+    assert deepgram_runtime._build_transcriber().sample_rate == 24000
+    assert elevenlabs_runtime._build_transcriber().sample_rate == 16000
+    assert deepgram_runtime._new_metrics().input_sample_rate == 24000
+    assert elevenlabs_runtime._new_metrics().input_sample_rate == 16000
+
+
 def test_first_greeting_names_alice_front_desk() -> None:
     """Verify this backend behavior stays stable for the call-center demo and its voice/runtime integrations."""
     context = CallCenterContext(session_id="session", trace_id="trace")
@@ -502,6 +521,14 @@ def test_direct_handoff_routes_explicit_specialist_return_to_billing() -> None:
 def test_transfer_only_request_detection_skips_immediate_second_handoff() -> None:
     """Pure transfer requests should stop after the runtime handoff intro."""
     assert _is_transfer_only_request("can u transfer back to billing", "billingAgent")
+    assert _is_transfer_only_request(
+        "Yes. Uh, can you just transfer me to the retention agent?",
+        "retentionAgent",
+    )
+    assert _is_transfer_only_request(
+        "Oh, stop, stop. Can you transfer me to the technical support agent?",
+        "technicalSupportAgent",
+    )
     assert not _is_transfer_only_request("transfer me to billing because my bill is too high", "billingAgent")
 
 

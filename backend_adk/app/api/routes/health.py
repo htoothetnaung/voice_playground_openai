@@ -17,7 +17,7 @@ async def health(settings: Settings = Depends(get_settings)) -> dict:
         "ok": True,
         "service": "atenxion-callcenter-adk-backend",
         "voice_provider": settings.voice_provider,
-        "available_architectures": ["cascaded_pipeline"],
+        "available_architectures": ["cascaded_pipeline", "elevenlabs_pipeline"],
         "llm_provider": "google_adk",
         "llm_model": settings.google_adk_model,
         "timestamp": datetime.now(timezone.utc).isoformat(),
