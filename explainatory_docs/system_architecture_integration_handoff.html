@@ -1,0 +1,1943 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>system_architecture_integration_handoff.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> or <div class="page"></div> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="atenxion-voice-agent-system-architecture-and-integration-handoff">Atenxion Voice Agent System Architecture and Integration Handoff</h1>
+<p>This document summarizes the current codebase for integration into a larger production codebase. It covers the Next.js frontend, the OpenAI Agents/FastAPI backend in <code>backend/</code>, the Google ADK/FastAPI backend in <code>backend_adk/</code>, all public API routes, WebSocket protocol expectations, environment variables, persistence, and deployment notes.</p>
+<h2 id="executive-summary">Executive Summary</h2>
+<p>The repository is a realtime call-center voice lab for Atenxion support workflows.</p>
+<ul>
+<li>Frontend: Next.js App Router app under <code>src/app</code>, served from the repository root.</li>
+<li>Primary backend: FastAPI app under <code>backend/</code>, using OpenAI Agents SDK for agent orchestration.</li>
+<li>Alternative backend: FastAPI app under <code>backend_adk/</code>, using Google ADK and Gemini for agent orchestration.</li>
+<li>Both backends expose nearly the same route surface so the frontend can switch backends by changing <code>FRONTEND_BACKEND_BASE_URL</code> and <code>NEXT_PUBLIC_CALLCENTER_BACKEND_WS_URL</code>.</li>
+<li>The main user flow is browser microphone/text input to a backend WebSocket, STT, agent orchestration, tool calls, TTS, and browser playback/transcript/event rendering.</li>
+<li>Production deployment currently expects Next.js on port <code>3014</code> and the primary FastAPI backend on port <code>4011</code> through PM2 and Nginx.</li>
+</ul>
+<h2 id="top-level-repository-map">Top-Level Repository Map</h2>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/app/</code></td>
+<td>Next.js frontend, pages, API proxy routes, React hooks, contexts, call-center UI.</td>
+</tr>
+<tr>
+<td><code>src/app/App.tsx</code></td>
+<td>Main call-center lab UI and session control logic.</td>
+</tr>
+<tr>
+<td><code>src/app/hooks/useBackendRealtimeSession.ts</code></td>
+<td>Main browser-to-backend WebSocket client, microphone capture, PCM streaming, playback, event handling.</td>
+</tr>
+<tr>
+<td><code>src/app/hooks/useRealtimeSession.ts</code></td>
+<td>Older/browser OpenAI Realtime WebRTC hook; currently not used by main <code>App.tsx</code>.</td>
+</tr>
+<tr>
+<td><code>src/app/api/</code></td>
+<td>Next.js API routes. Most routes proxy to FastAPI when <code>FRONTEND_BACKEND_BASE_URL</code> is set.</td>
+</tr>
+<tr>
+<td><code>backend/</code></td>
+<td>OpenAI Agents SDK FastAPI backend.</td>
+</tr>
+<tr>
+<td><code>backend/app/api/routes/</code></td>
+<td>Backend HTTP and WebSocket routes.</td>
+</tr>
+<tr>
+<td><code>backend/app/agents/callcenter/</code></td>
+<td>OpenAI agent graph, prompts, tools, data repository, realtime runtimes, stress lab.</td>
+</tr>
+<tr>
+<td><code>backend_adk/</code></td>
+<td>Google ADK sibling backend.</td>
+</tr>
+<tr>
+<td><code>backend_adk/app/api/routes/</code></td>
+<td>ADK backend HTTP and WebSocket routes, route-compatible with <code>backend/</code>.</td>
+</tr>
+<tr>
+<td><code>backend_adk/app/agents/callcenter/</code></td>
+<td>ADK agent graph, tools, runner, cascaded runtime, stress lab.</td>
+</tr>
+<tr>
+<td><code>ecosystem.config.cjs</code></td>
+<td>PM2 production process file for frontend and primary backend.</td>
+</tr>
+<tr>
+<td><code>.env.sample</code></td>
+<td>Environment variable reference.</td>
+</tr>
+<tr>
+<td><code>docs/</code></td>
+<td>Project documentation and this integration handoff.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="runtime-topology">Runtime Topology</h2>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart LR
+  Browser["Browser / Next.js UI"]
+  NextApp["Next.js server\nroot project\nport 3014 in prod"]
+  OpenAIBackend["FastAPI backend/\nOpenAI Agents SDK\nport 4011 prod / 8000 dev"]
+  ADKBackend["FastAPI backend_adk/\nGoogle ADK + Gemini\nport 8001 dev"]
+  Nginx["Nginx reverse proxy"]
+  OpenAI["OpenAI APIs\nRealtime, Responses, Agents SDK models"]
+  Google["Google Gemini via Google ADK"]
+  Deepgram["Deepgram STT"]
+  ElevenLabs["ElevenLabs STT/TTS"]
+  Mongo["MongoDB\nmock data + admin audit"]
+  SQLite["SQLite\nagent session memory"]
+  Bank["Atenxion Bank API"]
+  MCP["Optional MCP services\nemail/ticketing/Gmail"]
+
+  Browser --> Nginx
+  Nginx --> NextApp
+  Nginx --> OpenAIBackend
+  Nginx -. optional .-> ADKBackend
+  Browser <--> NextApp
+  Browser <--> OpenAIBackend
+  Browser <--> ADKBackend
+  NextApp --> OpenAIBackend
+  NextApp --> ADKBackend
+  OpenAIBackend --> OpenAI
+  OpenAIBackend --> Deepgram
+  OpenAIBackend --> ElevenLabs
+  OpenAIBackend --> Mongo
+  OpenAIBackend --> SQLite
+  OpenAIBackend --> Bank
+  OpenAIBackend --> MCP
+  ADKBackend --> Google
+  ADKBackend --> Deepgram
+  ADKBackend --> ElevenLabs
+  ADKBackend --> Mongo
+  ADKBackend --> SQLite
+  ADKBackend --> Bank
+  ADKBackend --> MCP
+</div></code></pre>
+<h2 id="main-voice-flow">Main Voice Flow</h2>
+<pre><code class="language-mermaid"><div class="mermaid">sequenceDiagram
+  participant U as User Browser
+  participant F as Next.js UI
+  participant WS as FastAPI WebSocket
+  participant STT as STT Provider
+  participant Agent as Agent Runtime
+  participant Tools as Tools / Data / APIs
+  participant TTS as ElevenLabs or OpenAI Audio
+  participant Admin as Audit Store
+
+  U->>F: Open / with agentConfig and architecture
+  F->>WS: WS connect /api/v1/callcenter/realtime/ws?agent_name=callcenteragent&architecture=cascaded_pipeline
+  WS->>Admin: start_session
+  WS-->>F: session_ready
+  WS-->>F: architecture_selected
+  U->>F: Speak or type
+  F->>WS: PCM bytes or user_text JSON
+  WS->>STT: Stream PCM or transcribe push-to-talk audio
+  STT-->>WS: Partial/final transcript
+  WS-->>F: stt_partial, stt_final, turn_detected
+  WS->>Agent: Run current agent turn
+  Agent->>Tools: lookup customer, verify caller, create case, bank API, RAG, MCP, etc.
+  Tools-->>Agent: Tool result
+  Agent-->>WS: Text deltas, tool events, handoff events
+  WS->>TTS: Synthesize assistant/handoff text
+  TTS-->>WS: PCM audio
+  WS-->>F: history_added, tool_start, tool_end, handoff, audio
+  WS->>Admin: record transcript/events/tickets
+  F-->>U: Transcript, event log, audio playback, active agent UI
+</div></code></pre>
+<h2 id="frontend-architecture">Frontend Architecture</h2>
+<h3 id="framework-and-runtime">Framework and Runtime</h3>
+<ul>
+<li>Framework: Next.js 15 App Router.</li>
+<li>React: React 19.</li>
+<li>Styling: Tailwind CSS.</li>
+<li>Icons: Radix UI icons.</li>
+<li>Production process: <code>node_modules/next/dist/bin/next start -p 3014 -H 0.0.0.0</code>.</li>
+<li>Build command: <code>npm run build</code>.</li>
+</ul>
+<h3 id="frontend-pages">Frontend Pages</h3>
+<table>
+<thead>
+<tr>
+<th>URL</th>
+<th>File</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/</code></td>
+<td><code>src/app/page.tsx</code>, <code>src/app/App.tsx</code></td>
+<td>Main realtime call-center lab.</td>
+</tr>
+<tr>
+<td><code>/admin</code></td>
+<td><code>src/app/admin/page.tsx</code></td>
+<td>Admin session review board backed by <code>/api/admin/sessions</code>.</td>
+</tr>
+<tr>
+<td><code>/stress-lab</code></td>
+<td><code>src/app/stress-lab/page.tsx</code></td>
+<td>Latency and tool stress benchmark UI.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="main-frontend-state">Main Frontend State</h3>
+<p><code>src/app/App.tsx</code> owns:</p>
+<ul>
+<li>Selected scenario via <code>agentConfig</code> query parameter.</li>
+<li>Selected voice architecture via <code>architecture</code> query parameter.</li>
+<li>Selected active agent.</li>
+<li>Session status.</li>
+<li>Mic enabled/disabled state.</li>
+<li>Audio playback enabled/disabled state.</li>
+<li>Filler/transfer sounds.</li>
+<li>Event panel visibility.</li>
+<li>User text input.</li>
+</ul>
+<p>Important query parameters:</p>
+<table>
+<thead>
+<tr>
+<th>Query param</th>
+<th>Example</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>agentConfig</code></td>
+<td><code>callcenteragent</code> or default key</td>
+<td>Selects frontend agent config set.</td>
+</tr>
+<tr>
+<td><code>architecture</code></td>
+<td><code>cascaded_pipeline</code></td>
+<td>Selects backend runtime architecture.</td>
+</tr>
+<tr>
+<td><code>codec</code></td>
+<td><code>opus</code></td>
+<td>Used by older WebRTC hook and toolbar codec selector.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="frontend-contexts">Frontend Contexts</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/app/contexts/TranscriptContext.tsx</code></td>
+<td>Stores transcript messages, transcript updates, and breadcrumbs.</td>
+</tr>
+<tr>
+<td><code>src/app/contexts/EventContext.tsx</code></td>
+<td>Stores client/server events for the event log.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="main-websocket-hook">Main WebSocket Hook</h3>
+<p><code>src/app/hooks/useBackendRealtimeSession.ts</code> is the active runtime client used by <code>App.tsx</code>.</p>
+<p>Responsibilities:</p>
+<ul>
+<li>Builds backend WS URL from environment.</li>
+<li>Opens WebSocket to <code>/api/v1/callcenter/realtime/ws</code>.</li>
+<li>Captures microphone with <code>navigator.mediaDevices.getUserMedia</code>.</li>
+<li>Resamples mic audio to backend input sample rate.</li>
+<li>Converts Float32 mic frames to PCM16 bytes.</li>
+<li>Applies local speech gate and push-to-talk control.</li>
+<li>Sends PCM bytes, <code>user_text</code>, <code>client_event</code>, <code>audio_commit</code>, <code>interrupt</code>, and <code>ping</code> messages.</li>
+<li>Receives server JSON events.</li>
+<li>Converts base64 PCM audio responses into browser <code>AudioBuffer</code> playback.</li>
+<li>Handles barge-in by stopping local playback and sending <code>interrupt</code>.</li>
+<li>Updates transcript/event contexts.</li>
+<li>Emits UI callbacks for handoffs, tool start/end, transfer audio, assistant speech, and connection status.</li>
+</ul>
+<p>Architecture-specific client audio behavior:</p>
+<table>
+<thead>
+<tr>
+<th>Architecture</th>
+<th style="text-align:right">Input sample rate</th>
+<th>Client behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cascaded_pipeline</code></td>
+<td style="text-align:right">24000 Hz</td>
+<td>Browser streams PCM16 to backend; local speech gate commits turns.</td>
+</tr>
+<tr>
+<td><code>elevenlabs_pipeline</code></td>
+<td style="text-align:right">16000 Hz</td>
+<td>Browser streams PCM16 suitable for ElevenLabs Scribe; provider VAD mode is enabled.</td>
+</tr>
+<tr>
+<td><code>openai_native</code></td>
+<td style="text-align:right">24000 Hz-ish PCM path through backend runtime</td>
+<td>Only available in the OpenAI backend. The ADK backend rejects this architecture.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="legacyopenai-browser-webrtc-hook">Legacy/OpenAI Browser WebRTC Hook</h3>
+<p><code>src/app/hooks/useRealtimeSession.ts</code> uses <code>@openai/agents/realtime</code> and browser WebRTC directly with an ephemeral OpenAI key from <code>/api/session</code>.</p>
+<p>The current <code>App.tsx</code> uses <code>useBackendRealtimeSession</code>, not this hook. Keep this hook only if the production app still needs a browser-owned OpenAI Realtime path.</p>
+<h2 id="frontend-api-routes">Frontend API Routes</h2>
+<p>The Next.js API routes provide a stable browser-facing route surface. When <code>FRONTEND_BACKEND_BASE_URL</code> is configured, routes proxy to FastAPI through <code>src/app/api/_lib/backendProxy.ts</code>.</p>
+<p><code>backendProxy.ts</code> behavior:</p>
+<ul>
+<li>Reads <code>FRONTEND_BACKEND_BASE_URL</code>.</li>
+<li>Removes trailing slashes.</li>
+<li>Adds <code>Content-Type: application/json</code>.</li>
+<li>Uses <code>cache: no-store</code>.</li>
+<li>Applies a 90 second timeout.</li>
+<li>Returns the FastAPI response body/status/content type.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Frontend route</th>
+<th>File</th>
+<th>Method</th>
+<th>FastAPI target when proxy configured</th>
+<th>Fallback behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/api/health</code></td>
+<td><code>src/app/api/health/route.ts</code></td>
+<td>GET</td>
+<td><code>/api/health</code></td>
+<td>Local Next.js health JSON.</td>
+</tr>
+<tr>
+<td><code>/api/session</code></td>
+<td><code>src/app/api/session/route.ts</code></td>
+<td>GET</td>
+<td><code>/api/session</code></td>
+<td>Calls OpenAI realtime sessions directly using <code>OPENAI_API_KEY</code>.</td>
+</tr>
+<tr>
+<td><code>/api/responses</code></td>
+<td><code>src/app/api/responses/route.ts</code></td>
+<td>POST</td>
+<td><code>/api/responses</code></td>
+<td>Calls OpenAI Responses API directly using <code>OPENAI_API_KEY</code>.</td>
+</tr>
+<tr>
+<td><code>/api/admin/sessions?limit=N</code></td>
+<td><code>src/app/api/admin/sessions/route.ts</code></td>
+<td>GET</td>
+<td><code>/api/v1/callcenter/admin/sessions?limit=N</code></td>
+<td>Returns empty session list.</td>
+</tr>
+<tr>
+<td><code>/api/admin/sessions/{sessionId}</code></td>
+<td><code>src/app/api/admin/sessions/[sessionId]/route.ts</code></td>
+<td>GET</td>
+<td><code>/api/v1/callcenter/admin/sessions/{sessionId}</code></td>
+<td>Returns 404.</td>
+</tr>
+<tr>
+<td><code>/api/stress-lab/scenarios</code></td>
+<td><code>src/app/api/stress-lab/scenarios/route.ts</code></td>
+<td>GET</td>
+<td><code>/api/v1/callcenter/stress-lab/scenarios</code></td>
+<td>Returns disabled empty scenario list.</td>
+</tr>
+<tr>
+<td><code>/api/stress-lab/runs</code></td>
+<td><code>src/app/api/stress-lab/runs/route.ts</code></td>
+<td>POST</td>
+<td><code>/api/v1/callcenter/stress-lab/runs</code></td>
+<td>Returns 503.</td>
+</tr>
+<tr>
+<td><code>/api/stress-lab/runs/{runId}</code></td>
+<td><code>src/app/api/stress-lab/runs/[runId]/route.ts</code></td>
+<td>GET</td>
+<td><code>/api/v1/callcenter/stress-lab/runs/{runId}</code></td>
+<td>Returns 404.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="backend-route-surface">Backend Route Surface</h2>
+<p>Both <code>backend/</code> and <code>backend_adk/</code> mount routes through <code>app/api/router.py</code>.</p>
+<h3 id="shared-http-routes">Shared HTTP Routes</h3>
+<table>
+<thead>
+<tr>
+<th>Backend route</th>
+<th>Method</th>
+<th>Purpose</th>
+<th>Used by frontend</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/api/health</code></td>
+<td>GET</td>
+<td>Health, uptime, service metadata, available architectures.</td>
+<td>Yes, through <code>/api/health</code>.</td>
+</tr>
+<tr>
+<td><code>/api/session</code></td>
+<td>GET</td>
+<td>Compatibility route for OpenAI native realtime sessions.</td>
+<td>Only legacy browser WebRTC path.</td>
+</tr>
+<tr>
+<td><code>/api/responses</code></td>
+<td>POST</td>
+<td>Backend-held OpenAI Responses API proxy.</td>
+<td>Yes, if frontend features call <code>/api/responses</code>.</td>
+</tr>
+<tr>
+<td><code>/api/v1/callcenter/scenario</code></td>
+<td>GET</td>
+<td>Static scenario metadata: company, agents, tools, available architectures.</td>
+<td>Not currently proxied by a Next API route, but useful for integration.</td>
+</tr>
+<tr>
+<td><code>/api/v1/callcenter/seed</code></td>
+<td>POST</td>
+<td>Seed demo mock data into MongoDB.</td>
+<td>Manual/admin/dev use.</td>
+</tr>
+<tr>
+<td><code>/api/v1/callcenter/sessions/{session_id}/events</code></td>
+<td>POST</td>
+<td>Persist client-originated audit event.</td>
+<td>WebSocket runtime mostly records events; route is available for external clients.</td>
+</tr>
+<tr>
+<td><code>/api/v1/callcenter/admin/sessions?limit=N</code></td>
+<td>GET</td>
+<td>List recent admin/audit sessions.</td>
+<td>Yes, <code>/admin</code>.</td>
+</tr>
+<tr>
+<td><code>/api/v1/callcenter/admin/sessions/{session_id}</code></td>
+<td>GET</td>
+<td>Session detail including tickets, transcript, events.</td>
+<td>Yes, <code>/admin</code>.</td>
+</tr>
+<tr>
+<td><code>/api/v1/callcenter/run</code></td>
+<td>POST</td>
+<td>Text-only one-turn call-center agent execution.</td>
+<td>Not used by main UI, useful for tests/integration.</td>
+</tr>
+<tr>
+<td><code>/api/v1/callcenter/stress-lab/scenarios</code></td>
+<td>GET</td>
+<td>List benchmark scenarios.</td>
+<td>Yes, <code>/stress-lab</code>.</td>
+</tr>
+<tr>
+<td><code>/api/v1/callcenter/stress-lab/runs</code></td>
+<td>POST</td>
+<td>Execute stress-lab suite.</td>
+<td>Yes, <code>/stress-lab</code>.</td>
+</tr>
+<tr>
+<td><code>/api/v1/callcenter/stress-lab/runs/{run_id}</code></td>
+<td>GET</td>
+<td>Fetch persisted stress-lab run.</td>
+<td>Yes, route exists in frontend.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="shared-websocket-route">Shared WebSocket Route</h3>
+<table>
+<thead>
+<tr>
+<th>Backend route</th>
+<th>Method</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/api/v1/callcenter/realtime/ws?agent_name={agentName}&amp;architecture={architecture}</code></td>
+<td>WS</td>
+<td>Main realtime voice/text runtime. Browser sends PCM bytes and JSON control messages; backend sends JSON events and base64 PCM audio chunks.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="text-run-request-and-response">Text Run Request and Response</h3>
+<p>Route: <code>POST /api/v1/callcenter/run</code></p>
+<p>Request:</p>
+<pre class="hljs"><code><div><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;input_text&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;I need help with my bill&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;session_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;optional-stable-session-id&quot;</span>
+<span class="hljs-punctuation">}</span>
+</div></code></pre>
+<p>Response:</p>
+<pre class="hljs"><code><div><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;session_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;callcenter-...&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;final_output&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;assistant final response&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;trace&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;trace_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;...&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;verified&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">false</span></span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;active_account_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">null</span></span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;case_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">null</span></span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;case_notes&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-punctuation">]</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</div></code></pre>
+<h2 id="openai-backend-architecture-backend">OpenAI Backend Architecture (<code>backend/</code>)</h2>
+<h3 id="fastapi-app">FastAPI App</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend/app/main.py</code></td>
+<td>Creates FastAPI app, configures CORS, request IDs, logging, and mounts routers.</td>
+</tr>
+<tr>
+<td><code>backend/app/core/config.py</code></td>
+<td>Pydantic settings loaded from root <code>.env</code>, <code>backend/.env</code>, or runtime <code>.env</code>.</td>
+</tr>
+<tr>
+<td><code>backend/app/api/router.py</code></td>
+<td>Includes health, session, responses, callcenter, stress-lab routers.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="openai-backend-runtime-modes">OpenAI Backend Runtime Modes</h3>
+<table>
+<thead>
+<tr>
+<th>Architecture</th>
+<th>Implementation</th>
+<th>Providers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>openai_native</code></td>
+<td><code>backend/app/agents/callcenter/realtime_runtime.py</code></td>
+<td>OpenAI Realtime Agents SDK for LLM, STT, TTS/audio.</td>
+</tr>
+<tr>
+<td><code>cascaded_pipeline</code></td>
+<td><code>backend/app/agents/callcenter/cascaded/runtime.py</code></td>
+<td>Deepgram STT -&gt; OpenAI Agents SDK / OpenAI LLM -&gt; ElevenLabs TTS.</td>
+</tr>
+<tr>
+<td><code>elevenlabs_pipeline</code></td>
+<td><code>backend/app/agents/callcenter/cascaded/runtime.py</code></td>
+<td>ElevenLabs Scribe STT -&gt; OpenAI Agents SDK / OpenAI LLM -&gt; ElevenLabs TTS.</td>
+</tr>
+</tbody>
+</table>
+<p>Important behavior in <code>backend/app/api/routes/callcenter.py</code>:</p>
+<ul>
+<li><code>architecture</code> comes from the WebSocket query parameter or <code>VOICE_PROVIDER</code>.</li>
+<li>If <code>architecture == &quot;openai_native&quot;</code> and <code>VOICE_PROVIDER == &quot;openai_native&quot;</code>, code currently forces <code>architecture = &quot;cascaded_pipeline&quot;</code>. Check this before production migration if true native realtime is required.</li>
+<li>Cascaded architectures use <code>CallCenterCascadedRuntime</code>.</li>
+<li>Otherwise the backend uses <code>CallCenterRealtimeRuntime</code>.</li>
+</ul>
+<h3 id="openai-agent-graph">OpenAI Agent Graph</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend/app/agents/callcenter/graph.py</code></td>
+<td>Builds OpenAI Agents SDK <code>Agent</code> objects and handoffs.</td>
+</tr>
+<tr>
+<td><code>backend/app/agents/callcenter/realtime_graph.py</code></td>
+<td>Builds realtime agent graph for OpenAI native realtime sessions.</td>
+</tr>
+<tr>
+<td><code>backend/app/agents/callcenter/prompts.py</code></td>
+<td>Specialist prompt definitions.</td>
+</tr>
+<tr>
+<td><code>backend/app/agents/callcenter/tools.py</code></td>
+<td>Tool functions used by agents.</td>
+</tr>
+<tr>
+<td><code>backend/app/agents/callcenter/context.py</code></td>
+<td>Shared per-session context: verification, active account, case, notes, agent state.</td>
+</tr>
+<tr>
+<td><code>backend/app/agents/callcenter/runner.py</code></td>
+<td>Text-only OpenAI Agents SDK runner with SQLite session memory.</td>
+</tr>
+</tbody>
+</table>
+<p>Agent names:</p>
+<ul>
+<li><code>callcenteragent</code>: triage/front desk.</li>
+<li><code>billingAgent</code>: billing, latest bill, bank transactions, charges, credits.</li>
+<li><code>technicalSupportAgent</code>: outages, diagnostics, technician scheduling.</li>
+<li><code>retentionAgent</code>: plans, comparison, retention offers, cancellation.</li>
+<li><code>supervisorAgent</code>: policy, exceptions, escalations, RAG/MCP tools.</li>
+<li><code>humanEscalationAgent</code>: simulated live escalation and human handoff messaging.</li>
+</ul>
+<p>Agent graph shape:</p>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart TD
+  Triage["callcenteragent\ntriage/front desk"]
+  Billing["billingAgent"]
+  Tech["technicalSupportAgent"]
+  Retention["retentionAgent"]
+  Supervisor["supervisorAgent"]
+  Human["humanEscalationAgent"]
+
+  Triage --> Billing
+  Triage --> Tech
+  Triage --> Retention
+  Triage --> Supervisor
+  Triage --> Human
+  Billing --> Triage
+  Billing --> Tech
+  Billing --> Retention
+  Billing --> Supervisor
+  Billing --> Human
+  Tech --> Triage
+  Tech --> Billing
+  Tech --> Retention
+  Tech --> Supervisor
+  Tech --> Human
+  Retention --> Triage
+  Retention --> Billing
+  Retention --> Tech
+  Retention --> Supervisor
+  Retention --> Human
+  Supervisor --> Triage
+  Supervisor --> Billing
+  Supervisor --> Tech
+  Supervisor --> Retention
+  Supervisor --> Human
+  Human --> Triage
+  Human --> Billing
+  Human --> Tech
+  Human --> Retention
+  Human --> Supervisor
+</div></code></pre>
+<h3 id="openai-backend-tool-inventory">OpenAI Backend Tool Inventory</h3>
+<p>Shared/account tools:</p>
+<ul>
+<li><code>lookup_customer_profile</code></li>
+<li><code>verify_caller</code></li>
+<li><code>lookup_active_services</code></li>
+<li><code>create_case</code></li>
+<li><code>add_case_note</code></li>
+</ul>
+<p>Billing tools:</p>
+<ul>
+<li><code>get_latest_bill</code></li>
+<li><code>atenxion_bank_tool</code></li>
+<li><code>explain_charge_breakdown</code></li>
+<li><code>offer_payment_arrangement</code></li>
+<li><code>apply_goodwill_credit</code></li>
+</ul>
+<p>Technical support tools:</p>
+<ul>
+<li><code>check_service_outage</code></li>
+<li><code>run_line_diagnostics</code></li>
+<li><code>schedule_technician</code></li>
+<li><code>reboot_device_workflow</code></li>
+</ul>
+<p>Retention tools:</p>
+<ul>
+<li><code>lookup_plan_options</code></li>
+<li><code>compare_plans</code></li>
+<li><code>generate_retention_offer</code></li>
+<li><code>submit_cancellation_request</code></li>
+</ul>
+<p>Supervisor and knowledge tools:</p>
+<ul>
+<li><code>lookup_policy_document</code></li>
+<li><code>search_atenxion_knowledge_base</code></li>
+<li><code>approve_exception</code></li>
+<li><code>escalation_decision</code></li>
+</ul>
+<p>MCP workflow tools:</p>
+<ul>
+<li><code>search_gmail_customer_history</code></li>
+<li><code>send_customer_followup_email_via_mcp</code></li>
+<li><code>search_customer_tickets_via_mcp</code></li>
+<li><code>create_customer_ticket_via_mcp</code></li>
+</ul>
+<p>External API:</p>
+<ul>
+<li><code>atenxion_bank_tool</code>, configured by <code>ATENXION_BANK_API_BASE_URL</code>, <code>ATENXION_BANK_API_TOKEN</code>, and <code>ATENXION_BANK_TEST_USER_ID</code>.</li>
+</ul>
+<h3 id="openai-cascaded-runtime">OpenAI Cascaded Runtime</h3>
+<p>File: <code>backend/app/agents/callcenter/cascaded/runtime.py</code></p>
+<p>Responsibilities:</p>
+<ul>
+<li>Owns one WebSocket session lifetime.</li>
+<li>Starts Deepgram or ElevenLabs Scribe transcriber when credentials exist.</li>
+<li>Starts ElevenLabs TTS adapter when <code>ELEVENLABS_API_KEY</code> exists.</li>
+<li>Creates SQLite-backed OpenAI Agents session.</li>
+<li>Tracks active call-center context.</li>
+<li>Handles browser PCM bytes and JSON control messages.</li>
+<li>Converts STT final transcripts to agent turns.</li>
+<li>Streams OpenAI Agents SDK events.</li>
+<li>Emits frontend-normalized events.</li>
+<li>Buffers sentence chunks for TTS.</li>
+<li>Handles deterministic/direct handoff routing for common requests.</li>
+<li>Emits transfer outro/intro audio windows.</li>
+<li>Creates/admin-audits transcript, events, and outcome tickets.</li>
+</ul>
+<h3 id="openai-native-runtime">OpenAI Native Runtime</h3>
+<p>File: <code>backend/app/agents/callcenter/realtime_runtime.py</code></p>
+<p>Responsibilities:</p>
+<ul>
+<li>Bridges browser WebSocket messages to <code>agents.realtime.RealtimeRunner</code>.</li>
+<li>Sends PCM bytes to OpenAI native realtime session.</li>
+<li>Sends text, interrupt, audio commit, and supported session updates.</li>
+<li>Normalizes OpenAI realtime events into frontend JSON events.</li>
+<li>Uses OpenAI realtime model from <code>OPENAI_REALTIME_MODEL</code>.</li>
+<li>Uses output audio modality with PCM16 and voice <code>sage</code>.</li>
+</ul>
+<h2 id="google-adk-backend-architecture-backend_adk">Google ADK Backend Architecture (<code>backend_adk/</code>)</h2>
+<p>The ADK backend is intentionally a sibling implementation. It keeps the same FastAPI route shape and frontend WebSocket protocol, but the LLM agent orchestration uses Google ADK and Gemini.</p>
+<h3 id="fastapi-app-1">FastAPI App</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend_adk/app/main.py</code></td>
+<td>Same FastAPI setup pattern as primary backend.</td>
+</tr>
+<tr>
+<td><code>backend_adk/app/core/config.py</code></td>
+<td>ADK-oriented settings including <code>GOOGLE_API_KEY</code>, <code>GOOGLE_ADK_MODEL</code>, and <code>ADK_SESSION_DB_PATH</code>.</td>
+</tr>
+<tr>
+<td><code>backend_adk/app/api/router.py</code></td>
+<td>Includes the same route groups as the primary backend.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="adk-runtime-modes">ADK Runtime Modes</h3>
+<table>
+<thead>
+<tr>
+<th>Architecture</th>
+<th>Implementation</th>
+<th>Providers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cascaded_pipeline</code></td>
+<td><code>backend_adk/app/agents/callcenter/cascaded/runtime.py</code></td>
+<td>Deepgram STT -&gt; Google ADK/Gemini -&gt; ElevenLabs TTS.</td>
+</tr>
+<tr>
+<td><code>elevenlabs_pipeline</code></td>
+<td><code>backend_adk/app/agents/callcenter/cascaded/runtime.py</code></td>
+<td>ElevenLabs Scribe STT -&gt; Google ADK/Gemini -&gt; ElevenLabs TTS.</td>
+</tr>
+<tr>
+<td><code>openai_native</code></td>
+<td>Not supported</td>
+<td>The ADK backend returns an error and closes the WebSocket.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="adk-agent-graph">ADK Agent Graph</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend_adk/app/agents/callcenter/graph.py</code></td>
+<td>Builds Google ADK <code>LlmAgent</code> graph.</td>
+</tr>
+<tr>
+<td><code>backend_adk/app/agents/callcenter/runner.py</code></td>
+<td>Wraps ADK <code>Runner</code>, <code>DatabaseSessionService</code>, session state mapping, and text turns.</td>
+</tr>
+<tr>
+<td><code>backend_adk/app/agents/callcenter/tools.py</code></td>
+<td>ADK-compatible tool functions using <code>ToolContext</code> state.</td>
+</tr>
+<tr>
+<td><code>backend_adk/app/agents/callcenter/cascaded/runtime.py</code></td>
+<td>Cascaded voice runtime using ADK events instead of OpenAI Agents SDK events.</td>
+</tr>
+</tbody>
+</table>
+<p>ADK implementation notes:</p>
+<ul>
+<li>Root agent is <code>callcenteragent</code>.</li>
+<li>Specialist agents are passed as <code>sub_agents</code> of the root ADK <code>LlmAgent</code>.</li>
+<li>Handoff is instructed through ADK transfer actions such as <code>transfer_to_agent</code>.</li>
+<li><code>CallCenterAdkEngine</code> owns a Google ADK <code>Runner</code> and <code>DatabaseSessionService</code>.</li>
+<li>ADK session state maps to local <code>CallCenterContext</code> with fields like <code>verified</code>, <code>current_agent_name</code>, <code>active_account_id</code>, <code>case_id</code>, and <code>case_notes</code>.</li>
+<li><code>GOOGLE_API_KEY</code> is required for ADK/Gemini turns.</li>
+<li>The ADK backend can still expose <code>/api/responses</code> if <code>OPENAI_API_KEY</code> is configured, but call-center orchestration itself uses Google ADK.</li>
+</ul>
+<h3 id="adk-route-differences">ADK Route Differences</h3>
+<table>
+<thead>
+<tr>
+<th>Route</th>
+<th>Difference from OpenAI backend</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/api/health</code></td>
+<td>Returns <code>service: atenxion-callcenter-adk-backend</code>, <code>llm_provider: google_adk</code>, and <code>llm_model</code>.</td>
+</tr>
+<tr>
+<td><code>/api/session</code></td>
+<td>Compatibility response for cascaded sessions; returns 501 if native realtime is requested.</td>
+</tr>
+<tr>
+<td><code>/api/responses</code></td>
+<td>Requires optional <code>OPENAI_API_KEY</code>; otherwise returns 503.</td>
+</tr>
+<tr>
+<td><code>/api/v1/callcenter/scenario</code></td>
+<td>Lists only <code>cascaded_pipeline</code> and <code>elevenlabs_pipeline</code>, with <code>google_adk</code> as LLM provider.</td>
+</tr>
+<tr>
+<td><code>/api/v1/callcenter/realtime/ws</code></td>
+<td>Rejects <code>openai_native</code>; supports only cascaded architectures.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="websocket-protocol">WebSocket Protocol</h2>
+<p>Route:</p>
+<pre class="hljs"><code><div>WS /api/v1/callcenter/realtime/ws?agent_name=callcenteragent&amp;architecture=cascaded_pipeline
+</div></code></pre>
+<p>Supported <code>architecture</code> values:</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Values</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend/</code></td>
+<td><code>openai_native</code>, <code>cascaded_pipeline</code>, <code>elevenlabs_pipeline</code></td>
+</tr>
+<tr>
+<td><code>backend_adk/</code></td>
+<td><code>cascaded_pipeline</code>, <code>elevenlabs_pipeline</code></td>
+</tr>
+</tbody>
+</table>
+<p>Supported <code>agent_name</code> values:</p>
+<ul>
+<li><code>callcenteragent</code></li>
+<li><code>billingAgent</code></li>
+<li><code>technicalSupportAgent</code></li>
+<li><code>retentionAgent</code></li>
+<li><code>supervisorAgent</code></li>
+<li><code>humanEscalationAgent</code></li>
+</ul>
+<h3 id="browser-to-backend-messages">Browser to Backend Messages</h3>
+<p>Binary messages:</p>
+<ul>
+<li>Raw PCM16 audio bytes.</li>
+<li>For <code>cascaded_pipeline</code>, frontend targets 24000 Hz mono PCM16.</li>
+<li>For <code>elevenlabs_pipeline</code>, frontend targets 16000 Hz mono PCM16.</li>
+</ul>
+<p>JSON messages:</p>
+<pre class="hljs"><code><div><span class="hljs-punctuation">{</span> <span class="hljs-attr">&quot;type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;user_text&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;text&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;I need help with billing&quot;</span> <span class="hljs-punctuation">}</span>
+</div></code></pre>
+<pre class="hljs"><code><div><span class="hljs-punctuation">{</span> <span class="hljs-attr">&quot;type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;interrupt&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;reason&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;barge_in&quot;</span> <span class="hljs-punctuation">}</span>
+</div></code></pre>
+<pre class="hljs"><code><div><span class="hljs-punctuation">{</span> <span class="hljs-attr">&quot;type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;audio_commit&quot;</span> <span class="hljs-punctuation">}</span>
+</div></code></pre>
+<pre class="hljs"><code><div><span class="hljs-punctuation">{</span> <span class="hljs-attr">&quot;type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;ping&quot;</span> <span class="hljs-punctuation">}</span>
+</div></code></pre>
+<pre class="hljs"><code><div><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;client_event&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;event&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;speech_gate.open&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;session_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;callcenter-cascaded-...&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;payload&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+      <span class="hljs-attr">&quot;type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;speech_gate.open&quot;</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;noiseFloor&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">0.01</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;speechThreshold&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">0.05</span>
+    <span class="hljs-punctuation">}</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</div></code></pre>
+<p>Other client event payloads used by the frontend:</p>
+<ul>
+<li><code>session.update</code></li>
+<li><code>input_audio_buffer.clear</code></li>
+<li><code>input_audio_buffer.commit</code></li>
+<li><code>conversation.item.create</code></li>
+<li><code>speech_gate.open</code></li>
+<li><code>speech_gate.closed</code></li>
+</ul>
+<h3 id="backend-to-browser-events">Backend to Browser Events</h3>
+<p>Common event types consumed by <code>useBackendRealtimeSession.ts</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Event type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>session_ready</code></td>
+<td>Runtime accepted WebSocket and created session/trace.</td>
+</tr>
+<tr>
+<td><code>architecture_selected</code></td>
+<td>Backend selected STT/LLM/TTS provider/model set.</td>
+</tr>
+<tr>
+<td><code>stt_stream_ready</code></td>
+<td>STT provider websocket/session is ready.</td>
+</tr>
+<tr>
+<td><code>stt_audio_received</code></td>
+<td>Backend received first mic audio bytes for turn.</td>
+</tr>
+<tr>
+<td><code>stt_partial</code></td>
+<td>Partial transcript from STT provider.</td>
+</tr>
+<tr>
+<td><code>stt_final</code></td>
+<td>Final transcript from STT provider.</td>
+</tr>
+<tr>
+<td><code>turn_detected</code></td>
+<td>Backend accepted a user turn for agent processing.</td>
+</tr>
+<tr>
+<td><code>metrics_update</code></td>
+<td>Latency/usage/provider metrics for a turn.</td>
+</tr>
+<tr>
+<td><code>cost_estimate</code></td>
+<td>Cost estimate event, if generated by backend.</td>
+</tr>
+<tr>
+<td><code>history_added</code></td>
+<td>Conversation item added.</td>
+</tr>
+<tr>
+<td><code>history_updated</code></td>
+<td>Conversation history updated.</td>
+</tr>
+<tr>
+<td><code>handoff</code></td>
+<td>Active agent changed.</td>
+</tr>
+<tr>
+<td><code>transfer_audio_start</code></td>
+<td>UI should play transfer/ringing filler cue.</td>
+</tr>
+<tr>
+<td><code>transfer_audio_end</code></td>
+<td>Transfer window ended server-side.</td>
+</tr>
+<tr>
+<td><code>agent_speech_start</code></td>
+<td>Agent speech started.</td>
+</tr>
+<tr>
+<td><code>agent_speech_end</code></td>
+<td>Agent speech ended.</td>
+</tr>
+<tr>
+<td><code>tool_start</code></td>
+<td>Agent tool call started.</td>
+</tr>
+<tr>
+<td><code>tool_end</code></td>
+<td>Agent tool call ended.</td>
+</tr>
+<tr>
+<td><code>audio</code></td>
+<td>Base64 PCM16 audio chunk for playback.</td>
+</tr>
+<tr>
+<td><code>audio_end</code></td>
+<td>Current audio output ended.</td>
+</tr>
+<tr>
+<td><code>audio_interrupted</code></td>
+<td>Backend canceled/cleared assistant audio.</td>
+</tr>
+<tr>
+<td><code>guardrail_tripped</code></td>
+<td>Guardrail event.</td>
+</tr>
+<tr>
+<td><code>ticket_created</code></td>
+<td>Admin/outcome ticket was created.</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td>Runtime error event.</td>
+</tr>
+<tr>
+<td><code>pong</code></td>
+<td>Response to ping.</td>
+</tr>
+</tbody>
+</table>
+<p>Example <code>session_ready</code>:</p>
+<pre class="hljs"><code><div><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;session_ready&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;session_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;callcenter-cascaded-...&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;trace_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;...&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;agent_name&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;callcenteragent&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;architecture&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;cascaded_pipeline&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;timestamp&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2026-06-02T00:00:00+00:00&quot;</span>
+<span class="hljs-punctuation">}</span>
+</div></code></pre>
+<p>Example <code>audio</code>:</p>
+<pre class="hljs"><code><div><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;audio&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;data&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;base64-pcm16-audio&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;agent_name&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;billingAgent&quot;</span>
+<span class="hljs-punctuation">}</span>
+</div></code></pre>
+<h2 id="persistence-and-data-stores">Persistence and Data Stores</h2>
+<h3 id="sqlite">SQLite</h3>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Setting</th>
+<th>Default</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend/</code></td>
+<td><code>CALLCENTER_SESSION_DB_PATH</code></td>
+<td><code>backend/.data/callcenter_sessions.db</code></td>
+<td>OpenAI Agents SDK <code>SQLiteSession</code> memory.</td>
+</tr>
+<tr>
+<td><code>backend_adk/</code></td>
+<td><code>ADK_SESSION_DB_PATH</code></td>
+<td><code>backend_adk/.data/callcenter_sessions.db</code></td>
+<td>Google ADK <code>DatabaseSessionService</code>.</td>
+</tr>
+<tr>
+<td><code>backend_adk/</code></td>
+<td><code>CALLCENTER_SESSION_DB_PATH</code></td>
+<td><code>backend_adk/.data/callcenter_sessions.db</code></td>
+<td>Compatibility path used by shared components.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="mongodb">MongoDB</h3>
+<p>Settings:</p>
+<ul>
+<li><code>MONGODB_URI</code></li>
+<li><code>MONGODB_DB</code></li>
+</ul>
+<p>Used by:</p>
+<ul>
+<li><code>CallCenterDataRepository</code> for seedable mock data.</li>
+<li><code>SessionAuditLogger</code> for session records, events, transcripts, and tickets.</li>
+<li><code>/admin</code> UI through <code>/api/admin/sessions</code>.</li>
+</ul>
+<p>If MongoDB is not available, repository methods fall back to static mock data where possible, and admin audit features may be empty/offline.</p>
+<h3 id="filejson-data">File/JSON Data</h3>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>STRESS_LAB_RESULTS_PATH</code></td>
+<td><code>backend/.data/stress_lab_runs.json</code></td>
+<td>Persist stress lab run results.</td>
+</tr>
+<tr>
+<td><code>CALLCENTER_RAG_VECTOR_STORE_ID</code></td>
+<td>none</td>
+<td>Optional OpenAI vector store ID for call-center RAG.</td>
+</tr>
+<tr>
+<td><code>STRESS_LAB_VECTOR_STORE_ID</code></td>
+<td>none</td>
+<td>Optional OpenAI vector store ID for stress-lab RAG scenarios.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="environment-variables">Environment Variables</h2>
+<h3 id="frontend--nextjs">Frontend / Next.js</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Required</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>FRONTEND_BACKEND_BASE_URL</code></td>
+<td>Production yes</td>
+<td>Server-side Next API proxy target, for example <code>http://127.0.0.1:4011</code> or <code>https://api-demovoice.atenxion.ai</code>.</td>
+</tr>
+<tr>
+<td><code>NEXT_PUBLIC_FRONTEND_BACKEND_BASE_URL</code></td>
+<td>Browser yes</td>
+<td>Browser-visible backend base for deriving WebSocket URL. Must be present at <code>npm run build</code> time.</td>
+</tr>
+<tr>
+<td><code>NEXT_PUBLIC_CALLCENTER_BACKEND_WS_URL</code></td>
+<td>Browser yes</td>
+<td>Explicit browser WebSocket URL, for example <code>wss://api-demovoice.atenxion.ai/api/v1/callcenter/realtime/ws</code>. Must be present at build time.</td>
+</tr>
+<tr>
+<td><code>OPENAI_API_KEY</code></td>
+<td>Optional in frontend server</td>
+<td>Used only by fallback Next <code>/api/session</code> and <code>/api/responses</code> when no FastAPI proxy is configured.</td>
+</tr>
+</tbody>
+</table>
+<p>Important Next.js note:</p>
+<p><code>NEXT_PUBLIC_*</code> values are bundled into client code during <code>npm run build</code>. If they change in production, rebuild the frontend and restart PM2.</p>
+<h3 id="openai-backend">OpenAI Backend</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Required</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>OPENAI_API_KEY</code></td>
+<td>Yes</td>
+<td>OpenAI Agents, OpenAI Realtime, Responses proxy, vector search helpers.</td>
+</tr>
+<tr>
+<td><code>BACKEND_PORT</code></td>
+<td>No</td>
+<td>Backend port metadata, default <code>8000</code>; PM2 runs <code>4011</code>.</td>
+</tr>
+<tr>
+<td><code>BACKEND_BASE_URL</code></td>
+<td>No</td>
+<td>Backend self/base URL.</td>
+</tr>
+<tr>
+<td><code>FRONTEND_BACKEND_BASE_URL</code></td>
+<td>No</td>
+<td>Compatibility value.</td>
+</tr>
+<tr>
+<td><code>ALLOWED_ORIGINS</code></td>
+<td>Production yes</td>
+<td>Comma-separated CORS origins.</td>
+</tr>
+<tr>
+<td><code>LOG_LEVEL</code></td>
+<td>No</td>
+<td>Logging level.</td>
+</tr>
+<tr>
+<td><code>VOICE_PROVIDER</code></td>
+<td>No</td>
+<td>Default backend voice architecture.</td>
+</tr>
+<tr>
+<td><code>OPENAI_REALTIME_MODEL</code></td>
+<td>No</td>
+<td>OpenAI native realtime model.</td>
+</tr>
+<tr>
+<td><code>OPENAI_RESPONSES_MODEL</code></td>
+<td>No</td>
+<td>Text run/OpenAI Agents model.</td>
+</tr>
+<tr>
+<td><code>OPENAI_CASCADED_LLM_MODEL</code></td>
+<td>No</td>
+<td>Cascaded OpenAI LLM model.</td>
+</tr>
+<tr>
+<td><code>DEEPGRAM_API_KEY</code></td>
+<td>Required for Deepgram path</td>
+<td>Deepgram realtime STT.</td>
+</tr>
+<tr>
+<td><code>ELEVENLABS_API_KEY</code></td>
+<td>Required for ElevenLabs STT/TTS</td>
+<td>ElevenLabs Scribe STT and TTS.</td>
+</tr>
+<tr>
+<td><code>MONGODB_URI</code></td>
+<td>Optional</td>
+<td>MongoDB connection.</td>
+</tr>
+<tr>
+<td><code>MONGODB_DB</code></td>
+<td>Optional</td>
+<td>MongoDB database name.</td>
+</tr>
+<tr>
+<td><code>ATENXION_BANK_API_BASE_URL</code></td>
+<td>Optional</td>
+<td>External bank API base URL.</td>
+</tr>
+<tr>
+<td><code>ATENXION_BANK_API_TOKEN</code></td>
+<td>Optional</td>
+<td>External bank API token.</td>
+</tr>
+<tr>
+<td><code>CALLCENTER_RAG_VECTOR_STORE_ID</code></td>
+<td>Optional</td>
+<td>OpenAI vector store for RAG.</td>
+</tr>
+<tr>
+<td><code>MCP_*</code> variables</td>
+<td>Optional</td>
+<td>Gmail/email/ticketing MCP tools.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="google-adk-backend">Google ADK Backend</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Required</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GOOGLE_API_KEY</code></td>
+<td>Yes</td>
+<td>Gemini/Google ADK model access.</td>
+</tr>
+<tr>
+<td><code>GOOGLE_ADK_MODEL</code></td>
+<td>No</td>
+<td>ADK model, default <code>gemini-2.5-flash</code>.</td>
+</tr>
+<tr>
+<td><code>BACKEND_ADK_PORT</code></td>
+<td>No</td>
+<td>ADK backend port metadata, default <code>8001</code>.</td>
+</tr>
+<tr>
+<td><code>BACKEND_ADK_BASE_URL</code></td>
+<td>No</td>
+<td>ADK backend base URL.</td>
+</tr>
+<tr>
+<td><code>ADK_SESSION_DB_PATH</code></td>
+<td>No</td>
+<td>ADK SQLite session DB path.</td>
+</tr>
+<tr>
+<td><code>VOICE_PROVIDER</code></td>
+<td>No</td>
+<td>Should be <code>cascaded_pipeline</code> or <code>elevenlabs_pipeline</code>.</td>
+</tr>
+<tr>
+<td><code>OPENAI_API_KEY</code></td>
+<td>Optional</td>
+<td>Only for optional <code>/api/responses</code> and OpenAI helper tools.</td>
+</tr>
+<tr>
+<td><code>DEEPGRAM_API_KEY</code></td>
+<td>Required for Deepgram path</td>
+<td>Deepgram realtime STT.</td>
+</tr>
+<tr>
+<td><code>ELEVENLABS_API_KEY</code></td>
+<td>Required for ElevenLabs STT/TTS</td>
+<td>ElevenLabs Scribe STT and TTS.</td>
+</tr>
+<tr>
+<td><code>MONGODB_URI</code> / <code>MONGODB_DB</code></td>
+<td>Optional</td>
+<td>Admin audit and mock data.</td>
+</tr>
+<tr>
+<td><code>ATENXION_BANK_*</code></td>
+<td>Optional</td>
+<td>External bank API.</td>
+</tr>
+<tr>
+<td><code>MCP_*</code> variables</td>
+<td>Optional</td>
+<td>Gmail/email/ticketing MCP tools.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="deployment-architecture">Deployment Architecture</h2>
+<p>Current PM2 production file: <code>ecosystem.config.cjs</code>.</p>
+<h3 id="pm2-apps">PM2 Apps</h3>
+<table>
+<thead>
+<tr>
+<th>PM2 name</th>
+<th>CWD</th>
+<th>Command</th>
+<th>Port</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>voice backend</code></td>
+<td>repo root</td>
+<td><code>uv run --project backend uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 4011 --proxy-headers</code></td>
+<td>4011</td>
+</tr>
+<tr>
+<td><code>voice frontend</code></td>
+<td>repo root</td>
+<td><code>node node_modules/next/dist/bin/next start -p 3014 -H 0.0.0.0</code></td>
+<td>3014</td>
+</tr>
+</tbody>
+</table>
+<p>The PM2 config currently starts only the OpenAI backend. To deploy the ADK backend, add a sibling PM2 app using:</p>
+<pre class="hljs"><code><div>uv run --project backend_adk uvicorn app.main:app --app-dir backend_adk --host 0.0.0.0 --port &lt;ADK_PORT&gt; --proxy-headers
+</div></code></pre>
+<h3 id="typical-server-commands">Typical Server Commands</h3>
+<pre class="hljs"><code><div>git <span class="hljs-built_in">clone</span> &lt;repo&gt;
+<span class="hljs-built_in">cd</span> openai-realtime-agents
+npm ci
+uv <span class="hljs-built_in">sync</span> --project backend
+npm run build
+pm2 startOrReload ecosystem.config.cjs --update-env
+pm2 save
+</div></code></pre>
+<p>For ADK:</p>
+<pre class="hljs"><code><div>uv <span class="hljs-built_in">sync</span> --project backend_adk
+uv run --project backend_adk uvicorn app.main:app --app-dir backend_adk --host 127.0.0.1 --port 8001 --reload
+</div></code></pre>
+<h3 id="nginx-requirements">Nginx Requirements</h3>
+<p>Frontend:</p>
+<ul>
+<li>Proxy domain to <code>http://127.0.0.1:3014</code>.</li>
+</ul>
+<p>Backend API:</p>
+<ul>
+<li>Proxy API domain to <code>http://127.0.0.1:4011</code> for OpenAI backend or ADK port for ADK backend.</li>
+<li>WebSocket upgrade headers are required for <code>/api/v1/callcenter/realtime/ws</code>.</li>
+</ul>
+<p>Example WebSocket-safe proxy block:</p>
+<pre class="hljs"><code><div><span class="hljs-section">location</span> / {
+  <span class="hljs-attribute">proxy_pass</span> http://127.0.0.1:4011;
+  <span class="hljs-attribute">proxy_http_version</span> <span class="hljs-number">1</span>.<span class="hljs-number">1</span>;
+  <span class="hljs-attribute">proxy_set_header</span> Upgrade <span class="hljs-variable">$http_upgrade</span>;
+  <span class="hljs-attribute">proxy_set_header</span> Connection <span class="hljs-string">&quot;upgrade&quot;</span>;
+  <span class="hljs-attribute">proxy_set_header</span> Host <span class="hljs-variable">$host</span>;
+  <span class="hljs-attribute">proxy_set_header</span> X-Real-IP <span class="hljs-variable">$remote_addr</span>;
+  <span class="hljs-attribute">proxy_set_header</span> X-Forwarded-For <span class="hljs-variable">$proxy_add_x_forwarded_for</span>;
+  <span class="hljs-attribute">proxy_set_header</span> X-Forwarded-Proto <span class="hljs-variable">$scheme</span>;
+}
+</div></code></pre>
+<p>Production HTTPS requires browser WebSocket URL to use <code>wss://</code>, not <code>ws://</code>.</p>
+<h2 id="integration-options">Integration Options</h2>
+<h3 id="option-a-keep-frontend-api-proxy-pattern">Option A: Keep Frontend API Proxy Pattern</h3>
+<p>Production frontend calls local <code>/api/*</code> routes. Next.js proxies to the selected backend using <code>FRONTEND_BACKEND_BASE_URL</code>.</p>
+<p>Pros:</p>
+<ul>
+<li>Browser never needs direct HTTP API base except WebSocket.</li>
+<li>Stable frontend route surface.</li>
+<li>Server-side API proxy can hide backend host changes.</li>
+</ul>
+<p>Cons:</p>
+<ul>
+<li>WebSocket still needs a browser-visible <code>NEXT_PUBLIC_CALLCENTER_BACKEND_WS_URL</code>.</li>
+<li>Next server is in the request path for REST APIs.</li>
+</ul>
+<h3 id="option-b-direct-browser-to-backend-api">Option B: Direct Browser to Backend API</h3>
+<p>Refactor frontend pages to call backend API domain directly.</p>
+<p>Pros:</p>
+<ul>
+<li>Less proxy code in Next.js.</li>
+<li>Easier to split frontend/backend services.</li>
+</ul>
+<p>Cons:</p>
+<ul>
+<li>CORS and auth must be production-grade.</li>
+<li>More browser-visible backend configuration.</li>
+</ul>
+<h3 id="option-c-embed-backend-routes-into-main-production-api">Option C: Embed Backend Routes into Main Production API</h3>
+<p>Move FastAPI route modules and agent packages into the main production backend.</p>
+<p>Recommended migration units:</p>
+<ol>
+<li>Copy config model concepts from <code>app/core/config.py</code>.</li>
+<li>Mount equivalent routes from <code>app/api/routes</code>.</li>
+<li>Copy <code>app/agents/callcenter</code>.</li>
+<li>Preserve WebSocket protocol used by <code>useBackendRealtimeSession.ts</code>.</li>
+<li>Preserve admin/audit persistence schema or adapt <code>/admin</code> frontend.</li>
+<li>Add production auth, rate limiting, and tenant/account binding around all routes.</li>
+</ol>
+<h2 id="production-integration-checklist">Production Integration Checklist</h2>
+<h3 id="frontend">Frontend</h3>
+<ul>
+<li>Keep or replace <code>useBackendRealtimeSession.ts</code>.</li>
+<li>Preserve WebSocket event names unless refactoring backend and frontend together.</li>
+<li>Ensure <code>NEXT_PUBLIC_CALLCENTER_BACKEND_WS_URL</code> points to production backend WS.</li>
+<li>Ensure <code>NEXT_PUBLIC_FRONTEND_BACKEND_BASE_URL</code> is set before <code>npm run build</code>.</li>
+<li>Decide whether <code>src/app/api/*</code> proxy routes remain or are replaced by direct API calls.</li>
+<li>Add production authentication around <code>/admin</code> and stress-lab routes before exposing publicly.</li>
+</ul>
+<h3 id="backend">Backend</h3>
+<ul>
+<li>Decide primary orchestration backend: OpenAI Agents SDK, Google ADK, or both.</li>
+<li>Keep route compatibility if frontend should switch between backends.</li>
+<li>Ensure WebSocket reverse proxy supports upgrade headers.</li>
+<li>Set <code>ALLOWED_ORIGINS</code> to production frontend domains.</li>
+<li>Configure API keys for selected architecture.</li>
+<li>Configure MongoDB if admin sessions and seedable data are required.</li>
+<li>Configure SQLite path to persistent disk.</li>
+<li>Decide whether optional MCP tools are enabled.</li>
+<li>Decide whether Atenxion Bank API should use real production credentials or a QA endpoint.</li>
+</ul>
+<h3 id="security">Security</h3>
+<ul>
+<li>Do not expose <code>OPENAI_API_KEY</code>, <code>GOOGLE_API_KEY</code>, <code>DEEPGRAM_API_KEY</code>, <code>ELEVENLABS_API_KEY</code>, <code>ATENXION_BANK_API_TOKEN</code>, or MCP auth tokens to the browser.</li>
+<li>Treat <code>NEXT_PUBLIC_*</code> variables as public.</li>
+<li>Add auth to admin session routes.</li>
+<li>Add auth/rate limits to <code>/api/v1/callcenter/realtime/ws</code>.</li>
+<li>Add request/body size limits for WebSocket and API routes.</li>
+<li>Review whether session transcripts can contain PII before persisting to MongoDB.</li>
+<li>Review CORS origins and Nginx host rules.</li>
+</ul>
+<h2 id="key-files-for-an-integration-agent">Key Files for an Integration Agent</h2>
+<p>Read these first:</p>
+<ol>
+<li><code>src/app/App.tsx</code></li>
+<li><code>src/app/hooks/useBackendRealtimeSession.ts</code></li>
+<li><code>src/app/api/_lib/backendProxy.ts</code></li>
+<li><code>backend/app/api/routes/callcenter.py</code></li>
+<li><code>backend/app/agents/callcenter/cascaded/runtime.py</code></li>
+<li><code>backend/app/agents/callcenter/graph.py</code></li>
+<li><code>backend/app/agents/callcenter/tools.py</code></li>
+<li><code>backend/app/agents/callcenter/session_audit.py</code></li>
+<li><code>backend_adk/app/api/routes/callcenter.py</code></li>
+<li><code>backend_adk/app/agents/callcenter/runner.py</code></li>
+<li><code>backend_adk/app/agents/callcenter/cascaded/runtime.py</code></li>
+<li><code>ecosystem.config.cjs</code></li>
+</ol>
+<h2 id="route-compatibility-matrix">Route Compatibility Matrix</h2>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Frontend route</th>
+<th>OpenAI backend</th>
+<th>ADK backend</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Health</td>
+<td><code>/api/health</code></td>
+<td><code>/api/health</code></td>
+<td><code>/api/health</code></td>
+</tr>
+<tr>
+<td>OpenAI realtime session compatibility</td>
+<td><code>/api/session</code></td>
+<td><code>/api/session</code> creates OpenAI session</td>
+<td><code>/api/session</code> returns cascaded compatibility message or 501</td>
+</tr>
+<tr>
+<td>Responses API proxy</td>
+<td><code>/api/responses</code></td>
+<td><code>/api/responses</code> requires <code>OPENAI_API_KEY</code></td>
+<td><code>/api/responses</code> optional, requires <code>OPENAI_API_KEY</code></td>
+</tr>
+<tr>
+<td>Scenario metadata</td>
+<td>none currently</td>
+<td><code>/api/v1/callcenter/scenario</code></td>
+<td><code>/api/v1/callcenter/scenario</code></td>
+</tr>
+<tr>
+<td>Text turn</td>
+<td>none currently</td>
+<td><code>/api/v1/callcenter/run</code></td>
+<td><code>/api/v1/callcenter/run</code></td>
+</tr>
+<tr>
+<td>Realtime WS</td>
+<td>direct browser WS</td>
+<td><code>/api/v1/callcenter/realtime/ws</code></td>
+<td><code>/api/v1/callcenter/realtime/ws</code></td>
+</tr>
+<tr>
+<td>Seed mock data</td>
+<td>none currently</td>
+<td><code>/api/v1/callcenter/seed</code></td>
+<td><code>/api/v1/callcenter/seed</code></td>
+</tr>
+<tr>
+<td>Record session event</td>
+<td>none currently</td>
+<td><code>/api/v1/callcenter/sessions/{session_id}/events</code></td>
+<td><code>/api/v1/callcenter/sessions/{session_id}/events</code></td>
+</tr>
+<tr>
+<td>Admin list</td>
+<td><code>/api/admin/sessions</code></td>
+<td><code>/api/v1/callcenter/admin/sessions</code></td>
+<td><code>/api/v1/callcenter/admin/sessions</code></td>
+</tr>
+<tr>
+<td>Admin detail</td>
+<td><code>/api/admin/sessions/{sessionId}</code></td>
+<td><code>/api/v1/callcenter/admin/sessions/{session_id}</code></td>
+<td><code>/api/v1/callcenter/admin/sessions/{session_id}</code></td>
+</tr>
+<tr>
+<td>Stress scenarios</td>
+<td><code>/api/stress-lab/scenarios</code></td>
+<td><code>/api/v1/callcenter/stress-lab/scenarios</code></td>
+<td><code>/api/v1/callcenter/stress-lab/scenarios</code></td>
+</tr>
+<tr>
+<td>Stress run</td>
+<td><code>/api/stress-lab/runs</code></td>
+<td><code>/api/v1/callcenter/stress-lab/runs</code></td>
+<td><code>/api/v1/callcenter/stress-lab/runs</code></td>
+</tr>
+<tr>
+<td>Stress run detail</td>
+<td><code>/api/stress-lab/runs/{runId}</code></td>
+<td><code>/api/v1/callcenter/stress-lab/runs/{run_id}</code></td>
+<td><code>/api/v1/callcenter/stress-lab/runs/{run_id}</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="known-integration-notes-and-risks">Known Integration Notes and Risks</h2>
+<ul>
+<li><code>backend/</code> and <code>backend_adk/</code> intentionally duplicate many files. If integrating into production, choose whether to preserve duplication for provider isolation or abstract shared code carefully.</li>
+<li>The frontend's active path is backend WebSocket based. The older browser OpenAI Realtime WebRTC hook remains but is not the active main path.</li>
+<li>The ADK backend does not implement OpenAI native realtime. Do not route <code>architecture=openai_native</code> to <code>backend_adk</code>.</li>
+<li><code>NEXT_PUBLIC_*</code> values must be configured before building the frontend.</li>
+<li>WebSocket audio is raw PCM16 binary frames plus JSON control messages. Any production API gateway must allow binary WebSocket frames.</li>
+<li>MongoDB is optional for demo fallback, but <code>/admin</code> is useful only when audit records are persisted.</li>
+<li>Stress-lab routes can call real external APIs/OpenAI tools when enabled. Keep them disabled or auth-protected in production.</li>
+<li>The bank tool currently defaults to a QA base URL. Production integration should explicitly configure the correct endpoint and credentials.</li>
+<li>Admin console has no app-level auth in this repo.</li>
+<li>CORS is environment-driven; production must set strict <code>ALLOWED_ORIGINS</code>.</li>
+</ul>
+
+</body>
+</html>
