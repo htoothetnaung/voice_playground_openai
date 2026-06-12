@@ -14,6 +14,7 @@ from app.agents.callcenter.cascaded.runtime import (
     _fixed_response_for_user_text,
     _handoff_intro,
     _handoff_outro,
+    _openai_usage_payload,
     _is_transfer_only_request,
     _should_skip_agent_sentence,
     _should_skip_handoff_sentence,
@@ -21,6 +22,8 @@ from app.agents.callcenter.cascaded.runtime import (
 )
 from app.agents.callcenter.context import CallCenterContext
 from app.core.config import Settings
+from agents.usage import Usage
+from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails
 
 
 class FakeWebSocket:
@@ -405,6 +408,75 @@ def test_cascaded_runtime_keeps_deepgram_and_elevenlabs_input_rates_separate() -
     assert elevenlabs_runtime._build_transcriber().sample_rate == 16000
     assert deepgram_runtime._new_metrics().input_sample_rate == 24000
     assert elevenlabs_runtime._new_metrics().input_sample_rate == 16000
+
+
+def test_openai_usage_payload_exposes_official_token_details() -> None:
+    """OpenAI usage should keep total, cached, reasoning, and per-request token details."""
+    usage = Usage(
+        requests=1,
+        input_tokens=120,
+        input_tokens_details=InputTokensDetails(cached_tokens=32),
+        output_tokens=45,
+        output_tokens_details=OutputTokensDetails(reasoning_tokens=9),
+        total_tokens=165,
+    )
+    usage.add(
+        Usage(
+            requests=1,
+            input_tokens=120,
+            input_tokens_details=InputTokensDetails(cached_tokens=32),
+            output_tokens=45,
+            output_tokens_details=OutputTokensDetails(reasoning_tokens=9),
+            total_tokens=165,
+        )
+    )
+
+    payload = _openai_usage_payload(usage)
+
+    assert payload == {
+        "source": "openai_agents_sdk",
+        "requests": 2,
+        "input_tokens": 240,
+        "input_tokens_details": {"cached_tokens": 64},
+        "output_tokens": 90,
+        "output_tokens_details": {"reasoning_tokens": 18},
+        "total_tokens": 330,
+        "request_usage_entries": [
+            {
+                "input_tokens": 120,
+                "output_tokens": 45,
+                "total_tokens": 165,
+                "input_tokens_details": {"cached_tokens": 32},
+                "output_tokens_details": {"reasoning_tokens": 9},
+            }
+        ],
+    }
+
+
+def test_turn_metrics_prefers_openai_usage_for_llm_cost() -> None:
+    """Official OpenAI token usage should replace text-length estimates for LLM cost."""
+    runtime = CallCenterCascadedRuntime(Settings(OPENAI_API_KEY="sk-test"))
+    metrics = runtime._new_metrics()
+    metrics.user_text = "short"
+    metrics.assistant_text = "short"
+    metrics.openai_usage = {
+        "input_tokens": 1000,
+        "output_tokens": 2000,
+        "total_tokens": 3000,
+        "input_tokens_details": {"cached_tokens": 100},
+        "output_tokens_details": {"reasoning_tokens": 25},
+    }
+
+    usage = metrics.usage()
+    cost = metrics.cost_estimate()
+
+    assert usage["openai_usage"]["input_tokens"] == 1000
+    assert usage["openai_usage"]["output_tokens"] == 2000
+    assert usage["openai_usage"]["total_tokens"] == 3000
+    assert usage["openai_usage"]["input_tokens_details"]["cached_tokens"] == 100
+    assert usage["openai_usage"]["output_tokens_details"]["reasoning_tokens"] == 25
+    assert cost["llm_token_source"] == "openai_usage"
+    assert cost["llm_usd_est"] == 0.0036
 
 
 def test_first_greeting_names_alice_front_desk() -> None:

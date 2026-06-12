@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from agents import Runner, SQLiteSession
+from agents.usage import Usage
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.agents.callcenter.cascaded.deepgram import (
@@ -699,6 +700,7 @@ class CallCenterCascadedRuntime:
                         if getattr(event, "type", None) == "run_item_stream_event":
                             await self._send_run_item_event(websocket, event, active_agent_name)
 
+                    metrics.openai_usage = _openai_usage_payload(getattr(result.context_wrapper, "usage", None))
                     remaining = sentence_buffer.flush()
                     if remaining:
                         if not _should_skip_agent_sentence(remaining, active_agent_name, pending_handoff_agent_name):
@@ -885,6 +887,66 @@ def _loads(text: str) -> dict[str, Any]:
     except Exception:
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _openai_usage_payload(usage: Usage | None) -> dict[str, Any] | None:
+    """Return docs-shaped OpenAI token usage captured by the Agents SDK."""
+    if usage is None or usage.total_tokens <= 0:
+        return None
+
+    input_details = _token_details_payload(
+        usage.input_tokens_details,
+        {"cached_tokens": 0},
+    )
+    output_details = _token_details_payload(
+        usage.output_tokens_details,
+        {"reasoning_tokens": 0},
+    )
+    request_entries = [
+        {
+            "input_tokens": entry.input_tokens,
+            "output_tokens": entry.output_tokens,
+            "total_tokens": entry.total_tokens,
+            "input_tokens_details": _token_details_payload(
+                entry.input_tokens_details,
+                {"cached_tokens": 0},
+            ),
+            "output_tokens_details": _token_details_payload(
+                entry.output_tokens_details,
+                {"reasoning_tokens": 0},
+            ),
+        }
+        for entry in usage.request_usage_entries
+    ]
+
+    payload: dict[str, Any] = {
+        "source": "openai_agents_sdk",
+        "requests": usage.requests,
+        "input_tokens": usage.input_tokens,
+        "input_tokens_details": input_details,
+        "output_tokens": usage.output_tokens,
+        "output_tokens_details": output_details,
+        "total_tokens": usage.total_tokens,
+    }
+    if request_entries:
+        payload["request_usage_entries"] = request_entries
+    return payload
+
+
+def _token_details_payload(details: Any, default: dict[str, int]) -> dict[str, Any]:
+    """Serialize OpenAI token detail objects while keeping empty fields predictable."""
+    if details is None:
+        return dict(default)
+    if hasattr(details, "model_dump"):
+        serialized = details.model_dump(exclude_none=True)
+        if isinstance(serialized, dict) and serialized:
+            return serialized
+    values = {
+        key: value
+        for key, value in vars(details).items()
+        if not key.startswith("_") and value is not None
+    }
+    return values or dict(default)
 
 
 def _format_exception(exc: BaseException) -> str:

@@ -39,6 +39,7 @@ class TurnMetrics:
     user_audio_bytes: int = 0
     user_text: str = ""
     assistant_text: str = ""
+    openai_usage: dict[str, Any] | None = None
     stt_first_partial_ms: float | None = None
     stt_first_final_ms: float | None = None
     turn_detected_ms: float | None = None
@@ -61,22 +62,28 @@ class TurnMetrics:
         """Convert collected byte, text, and TTS character counts into usage estimates."""
         input_audio_minutes = self.user_audio_bytes / 2 / self.input_sample_rate / 60
         output_audio_minutes = self.output_audio_bytes / 2 / self.output_sample_rate / 60
-        return {
+        usage = {
             "input_audio_minutes": round(input_audio_minutes, 6),
             "output_audio_minutes": round(output_audio_minutes, 6),
             "llm_input_tokens_est": estimate_tokens(self.user_text),
             "llm_output_tokens_est": estimate_tokens(self.assistant_text),
             "tts_characters": self.tts_characters,
         }
+        if self.openai_usage is not None:
+            usage["openai_usage"] = self.openai_usage
+        return usage
 
     def cost_estimate(self) -> dict[str, Any]:
         """Estimate provider cost from current usage and configured static rates."""
         usage = self.usage()
         stt_rate = DEEPGRAM_PAYG_PER_MINUTE.get(self.stt_model, 0.0077)
         stt_cost = usage["input_audio_minutes"] * stt_rate
+        openai_usage = self.openai_usage or {}
+        llm_input_tokens = openai_usage.get("input_tokens", usage["llm_input_tokens_est"])
+        llm_output_tokens = openai_usage.get("output_tokens", usage["llm_output_tokens_est"])
         llm_cost = (
-            usage["llm_input_tokens_est"] / 1_000_000 * OPENAI_GPT41_MINI_INPUT_PER_1M
-            + usage["llm_output_tokens_est"] / 1_000_000 * OPENAI_GPT41_MINI_OUTPUT_PER_1M
+            llm_input_tokens / 1_000_000 * OPENAI_GPT41_MINI_INPUT_PER_1M
+            + llm_output_tokens / 1_000_000 * OPENAI_GPT41_MINI_OUTPUT_PER_1M
         )
         elevenlabs_credits = (
             usage["tts_characters"] * ELEVENLABS_FLASH_OR_TURBO_CREDITS_PER_CHAR
@@ -85,6 +92,7 @@ class TurnMetrics:
             "currency": "USD",
             "stt_usd_est": round(stt_cost, 8),
             "llm_usd_est": round(llm_cost, 8),
+            "llm_token_source": "openai_usage" if self.openai_usage else "estimate",
             "elevenlabs_credits_est": round(elevenlabs_credits, 3),
             "total_usd_est_excluding_elevenlabs_subscription": round(stt_cost + llm_cost, 8),
         }
